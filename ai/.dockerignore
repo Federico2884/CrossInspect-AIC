@@ -1,0 +1,16 @@
+tests/
+*.ipynb
+.ipynb_checkpoints/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.git/
+.gitignore
+.dockerignore
+README.md
