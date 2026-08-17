@@ -1,3 +1,5 @@
+training/
+
 tests/
 *.ipynb
 .ipynb_checkpoints/
