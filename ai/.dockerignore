@@ -14,3 +14,10 @@ venv/
 .gitignore
 .dockerignore
 README.md
+
+# Artefak lokal yang tidak boleh masuk build context
+.cache/
+data/
+models/
+outputs/
+requirements-dev.txt

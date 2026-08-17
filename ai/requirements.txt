@@ -1,0 +1,19 @@
+# CrossInspect AI — base runtime dependencies (slim image, CPU-only).
+# Heavy model weights/frameworks live in requirements-ml.txt so the default
+# image stays pullable. Dev/eval tooling lives in requirements-dev.txt.
+
+# --- Web layer (shared by all modules) ---
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-multipart==0.0.20        # multipart/form-data uploads
+
+# --- Modul 1: Document Parsing (PDF Reader) ---
+PyMuPDF==1.25.1                 # fitz — PDF -> 300 DPI raster
+pillow==11.0.0                  # image normalisation / encoding
+python-dateutil==2.9.0.post0    # tanggal Indonesia -> ISO-8601
+
+# --- Shared utilities ---
+httpx==0.28.1                   # inter-service calls + FastAPI TestClient
+orjson==3.10.12                 # fast JSON responses

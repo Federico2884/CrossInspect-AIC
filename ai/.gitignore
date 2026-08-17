@@ -7,3 +7,14 @@ venv/
 .ruff_cache/
 .ipynb_checkpoints/
 .env
+
+# Bobot model & cache HF — jangan pernah di-commit
+.cache/
+models/
+*.safetensors
+*.bin
+
+# Dataset sintetis & output eval (regenerate via scripts/)
+data/synthetic/
+data/eval/out/
+outputs/
