@@ -14,7 +14,11 @@ models/
 *.safetensors
 *.bin
 
-# Dataset sintetis & output eval (regenerate via scripts/)
-data/synthetic/
-data/eval/out/
+# Dataset sintetis & output eval — TIDAK pernah di-commit.
+# Seed-nya yang jadi sumber kebenaran: `--seed 42` menghasilkan dataset yang
+# identik, jadi meng-commit 50 MB JPEG tidak menambah informasi apa pun.
+data/
 outputs/
+
+# Cache Augraphy (dibuat otomatis saat generate dataset)
+augraphy_cache/

@@ -16,4 +16,6 @@ Faker==33.1.0
 reportlab==4.2.5
 augraphy==8.2.6                 # scan/print artefact augmentation
 numpy==2.1.3
-opencv-python-headless==4.10.0.84   # augraphy backend, headless (no GUI libs)
+# opencv-python ditarik otomatis oleh augraphy (versi penuh, bukan headless);
+# pustaka X11-nya disediakan Dockerfile.dev. Jangan pin headless di sini —
+# keduanya akan terpasang dan menimpa modul cv2 yang sama.

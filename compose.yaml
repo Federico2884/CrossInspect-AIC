@@ -43,6 +43,19 @@ services:
             - 'ai-hf-cache:/srv/ai/.cache/huggingface'
         networks:
             - sail
+    ai-test:
+        # Test + generator dataset. Profil 'test' supaya `docker compose up`
+        # biasa tidak ikut menjalankannya.
+        profiles: ['test']
+        build:
+            context: ./ai
+            dockerfile: Dockerfile.dev
+        image: 'crossinspect/ai-test'
+        volumes:
+            - './ai:/srv/ai'
+        working_dir: /srv/ai
+        networks:
+            - sail
 networks:
     sail:
         driver: bridge
