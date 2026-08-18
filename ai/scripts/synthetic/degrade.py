@@ -2,7 +2,7 @@
 
 Model nanti tidak akan melihat PDF bersih: petugas gudang memotret surat jalan
 dengan HP, miring sedikit, di bawah lampu gudang, kertasnya terlipat bekas
-dilipat tiga. Eval set berisi PDF sempurna akan memberi angka akurasi yang
+dilipat tiga. Set evaluasi berisi PDF sempurna akan memberi angka akurasi yang
 terlalu optimistis.
 
 Degradasi dibagi tiga tingkat supaya hasil evaluasi step 4 bisa dipecah
@@ -42,7 +42,7 @@ def _build_pipeline(severity: str, seed: int):
 
     Batasnya jelas: teks harus tetap terbaca manusia. Augmentasi yang lebih
     ganas dari ini menghasilkan gambar yang tidak bisa dijadikan label evaluasi
-    — itu bukan eval set yang sulit, itu noise.
+    — itu bukan set evaluasi yang sulit, itu noise.
     """
     from augraphy import (
         AugraphyPipeline,

@@ -1,6 +1,6 @@
-# Synthetic Surat Jalan generator
+# Generator Surat Jalan Sintetis
 
-Membuat eval set untuk mengukur Qwen2-VL zero-shot di step 4. Tanpa ini, satu-
+Membuat set evaluasi untuk mengukur Qwen2-VL zero-shot di step 4. Tanpa ini, satu-
 satunya cara menilai model adalah membaca hasilnya satu per satu.
 
 ## Menjalankan
@@ -32,9 +32,9 @@ data/synthetic/
 Semua keluaran di-gitignore. Dataset **tidak** di-commit — cukup seed-nya, karena
 seed yang sama menghasilkan dataset yang identik byte-per-byte.
 
-## Kenapa dibangun begini
+## Alasan desain
 
-**Data dipisah dari tampilan.** `document.py` membuat `GroundTruth`, `render.py`
+**Data dipisah dari penggambaran.** `document.py` membuat `GroundTruth`, `render.py`
 menggambarnya. Keduanya memakai objek yang sama, jadi label evaluasi tidak mungkin
 melenceng dari isi PDF. Test `test_rendered_pdf_contains_the_ground_truth_values`
 menjaga janji ini.
@@ -47,7 +47,7 @@ struktur baru — supaya evaluasi step 4 membandingkan hal yang benar-benar seba
 dengan keluaran `/document/parse`.
 
 **Satuan aneh sengaja ada.** `Ball`, `Slop`, `Renceng`, `Zak` muncul di dataset dan
-dipetakan ke `unknown`. Kalau eval set hanya berisi `pcs`/`box`, kelemahan normalisasi
+dipetakan ke `unknown`. Kalau set evaluasi hanya berisi `pcs`/`box`, kelemahan normalisasi
 tidak akan pernah terlihat.
 
 **Degradasi bertingkat.** `light` (scan kantor), `medium` (foto HP, miring, cahaya

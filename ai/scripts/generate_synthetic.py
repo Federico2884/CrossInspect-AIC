@@ -1,4 +1,4 @@
-"""CLI generator Surat Jalan sintetis untuk eval set step 4.
+"""CLI generator Surat Jalan sintetis untuk set evaluasi step 4.
 
 Contoh:
     python scripts/generate_synthetic.py --count 200 --seed 42
