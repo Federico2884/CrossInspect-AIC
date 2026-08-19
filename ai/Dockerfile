@@ -14,6 +14,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# Bobot Modul 2 (~6 MB). Image slim tidak punya torch, jadi vision di sini
+# berjalan sebagai mock — bobotnya tetap disertakan supaya pindah ke
+# Dockerfile.ml tidak perlu menyiapkan apa pun lagi.
+COPY models ./models
 
 RUN useradd --create-home --uid 1000 aiuser \
     && chown -R aiuser:aiuser /srv/ai

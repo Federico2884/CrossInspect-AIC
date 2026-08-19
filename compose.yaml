@@ -33,6 +33,10 @@ services:
         environment:
             OMP_NUM_THREADS: '${AI_OMP_NUM_THREADS:-4}'
             MKL_NUM_THREADS: '${AI_OMP_NUM_THREADS:-4}'
+            # Modul 2. 'auto' memakai YOLO bila image-nya punya torch
+            # (Dockerfile.ml), selain itu jatuh ke mock — service tetap menyala.
+            AI_VISION_ENGINE: '${AI_VISION_ENGINE:-auto}'
+            AI_VISION_CONF_THRESHOLD: '${AI_VISION_CONF_THRESHOLD:-0.40}'
         ports:
             # Hanya untuk debugging langsung; Laravel memanggil via http://ai:8000
             - '${AI_PORT:-8001}:8000'

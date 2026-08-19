@@ -22,7 +22,11 @@ README.md
 # sedangkan Dockerfile runtime tidak pernah meng-COPY-nya.
 .cache/
 data/
-models/
 outputs/
 scripts/
 augraphy_cache/
+
+# models/ dikecualikan KECUALI bobot .pt: Modul 2 meng-COPY-nya ke image
+# supaya container bisa mendeteksi tanpa bind mount atau download.
+models/*
+!models/*.pt

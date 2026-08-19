@@ -8,9 +8,13 @@ venv/
 .ipynb_checkpoints/
 .env
 
-# Bobot model & cache HF — jangan pernah di-commit
+# Cache HF & bobot besar — jangan pernah di-commit.
+# Perkecualian: bobot YOLO Modul 2 (~6 MB) sengaja di-commit supaya repo
+# self-contained — juri tidak perlu API key Roboflow maupun langkah download.
+# Qwen2-VL tetap di luar: ia turun ke .cache/huggingface, bukan ke models/.
 .cache/
-models/
+models/*
+!models/*.pt
 *.safetensors
 *.bin
 
