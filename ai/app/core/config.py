@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     max_upload_mb: int = 20
     max_pages: int = 10
     render_dpi: int = 300
+    # Sisi terpanjang halaman setelah rasterisasi. A4 @ 300 DPI = 2480x3508 px;
+    # diumpankan apa adanya ke Qwen2-VL, jumlah visual token-nya membuat
+    # inference CPU-only tidak realistis. 300 DPI tetap dipakai supaya teks
+    # kecil tidak hancur, lalu hasilnya diperkecil untuk model.
+    render_max_long_edge: int = 1600
 
     # Jumlah thread BLAS/OMP. Di-set juga sebagai ENV di Dockerfile supaya
     # library yang membaca env saat import sudah melihat nilai yang benar.

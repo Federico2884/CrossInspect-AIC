@@ -10,7 +10,9 @@ per-tingkat ("akurasi turun berapa saat fotonya jelek?"), bukan cuma satu
 angka rata-rata yang menyembunyikan kelemahan model.
 
 Catatan: rasterisasi 300 DPI di modul ini berdiri sendiri dan TIDAK
-menggantikan ``app/rendering.py`` (step 2) yang belum ada di repo ini.
+menggantikan ``app/modules/document/rendering.py`` (step 2). Keluarannya pun
+berbeda: di sini array BGR untuk Augraphy, di sana ``PIL.Image`` RGB untuk
+engine visi.
 """
 
 from __future__ import annotations
