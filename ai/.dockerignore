@@ -16,3 +16,13 @@ venv/
 .gitignore
 .dockerignore
 README.md
+
+# Artefak lokal yang tidak boleh masuk build context.
+# requirements-dev.txt sengaja TIDAK di-exclude: Dockerfile.dev butuh file ini,
+# sedangkan Dockerfile runtime tidak pernah meng-COPY-nya.
+.cache/
+data/
+models/
+outputs/
+scripts/
+augraphy_cache/

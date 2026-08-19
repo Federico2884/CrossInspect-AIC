@@ -1,0 +1,31 @@
+# Image untuk test & generator dataset — TIDAK pernah dideploy.
+#
+# Ada dua alasan file ini perlu berdiri sendiri:
+#   1. requirements-dev.txt sengaja di-exclude dari image runtime (.dockerignore),
+#      jadi container `ai` memang tidak bisa menjalankan test-nya sendiri.
+#   2. Augraphy menarik `opencv-python` versi penuh (bukan headless), yang
+#      butuh pustaka X11 walau dipakai tanpa GUI sama sekali.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    OMP_NUM_THREADS=4
+
+# Dependensi sistem untuk cv2. Tanpa ini: ImportError libxcb.so.1.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv/ai
+
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+CMD ["python", "-m", "pytest"]

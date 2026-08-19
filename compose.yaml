@@ -4,7 +4,7 @@ services:
             context: './vendor/laravel/sail/runtimes/8.5'
             dockerfile: Dockerfile
             args:
-                WWWGROUP: '${WWWGROUP}'
+                WWWGROUP: '${WWWGROUP:-1000}'
         image: 'sail-8.5/app'
         extra_hosts:
             - 'host.docker.internal:host-gateway'
@@ -17,11 +17,48 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            AI_SERVICE_URL: 'http://ai:8000'
         volumes:
             - '.:/var/www/html'
         networks:
             - sail
-        depends_on: {}
+        depends_on:
+            ai:
+                condition: service_healthy
+    ai:
+        build:
+            context: ./ai
+            dockerfile: '${AI_DOCKERFILE:-Dockerfile}'
+        image: 'crossinspect/ai'
+        environment:
+            OMP_NUM_THREADS: '${AI_OMP_NUM_THREADS:-4}'
+            MKL_NUM_THREADS: '${AI_OMP_NUM_THREADS:-4}'
+        ports:
+            # Hanya untuk debugging langsung; Laravel memanggil via http://ai:8000
+            - '${AI_PORT:-8001}:8000'
+        volumes:
+            # Hot-reload saat development. Hapus baris ini untuk build produksi.
+            - './ai/app:/srv/ai/app:ro'
+            # Cache bobot model supaya tidak re-download tiap `docker compose up`.
+            - 'ai-hf-cache:/srv/ai/.cache/huggingface'
+        networks:
+            - sail
+    ai-test:
+        # Test + generator dataset. Profil 'test' supaya `docker compose up`
+        # biasa tidak ikut menjalankannya.
+        profiles: ['test']
+        build:
+            context: ./ai
+            dockerfile: Dockerfile.dev
+        image: 'crossinspect/ai-test'
+        volumes:
+            - './ai:/srv/ai'
+        working_dir: /srv/ai
+        networks:
+            - sail
 networks:
     sail:
         driver: bridge
+volumes:
+    ai-hf-cache:
+        driver: local

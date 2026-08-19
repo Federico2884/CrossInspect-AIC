@@ -1,0 +1,19 @@
+# Heavy inference stack — CPU ONLY, no GPU code path anywhere in Modul 1.
+# Installed by Dockerfile.ml (build step 4+), never in the slim default image.
+#
+# The CPU wheel index is declared in-file, so a plain
+#   pip install -r requirements-ml.txt
+# is already correct — the caller cannot forget the flag and accidentally
+# drag in the ~2.5 GB CUDA-bundled build of torch from PyPI.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+-r requirements.txt
+
+torch==2.5.1                    # resolves to 2.5.1+cpu (local version sorts higher)
+torchvision==0.20.1             # qwen-vl-utils imports it at module level; not optional
+
+transformers==4.47.1            # >=4.45 required for Qwen2-VL
+accelerate==1.2.1
+safetensors==0.4.5
+sentencepiece==0.2.0
+qwen-vl-utils==0.0.8            # image resizing helpers for Qwen2-VL prompts
