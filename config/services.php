@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'ai' => [
+        'url' => env('AI_SERVICE_URL', 'http://ai:8000'),
+        // Inference Qwen2-VL di CPU terukur ~250 detik untuk satu halaman padat,
+        // jauh di atas default 30 detik milik HTTP client Laravel.
+        'timeout' => env('AI_HTTP_TIMEOUT', 600),
+    ],
+
 ];

@@ -2,7 +2,16 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q --strict-markers"
-filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+    "error::DeprecationWarning",
+    # PyMuPDF memakai binding SWIG. Saat diimpor, SWIG mendaftarkan tipe builtin
+    # tanpa __module__, dan Python 3.11 memperingatkannya. Kalau peringatan itu
+    # dijadikan error, exception-nya dilempar di tengah inisialisasi modul C dan
+    # interpreter langsung segfault — bukan gagal test yang bisa dibaca.
+    # Peringatan ini milik pustaka pihak ketiga, jadi hanya pola ini yang
+    # dikecualikan; DeprecationWarning dari kode sendiri tetap menjadi error.
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]

@@ -11,7 +11,9 @@ import random
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from faker import Faker
+# Faker di-import di dalam build_spec, bukan di sini. GroundTruth dipakai juga
+# oleh harness evaluasi yang jalan di image ML — image itu tidak memuat
+# dependensi dev, dan skema label seharusnya memang tidak menuntutnya.
 from pydantic import BaseModel
 
 from app.modules.document.schemas import DocumentType, Item
@@ -108,6 +110,8 @@ def build_spec(seed: int, doc_id: str) -> DocumentSpec:
     Seed yang sama selalu menghasilkan dokumen yang sama, sehingga satu berkas
     bisa diregenerasi tanpa membuat ulang seluruh dataset.
     """
+    from faker import Faker  # dev-only; lihat catatan di puncak berkas
+
     rng = random.Random(seed)
     faker = Faker("id_ID")
     faker.seed_instance(seed)
