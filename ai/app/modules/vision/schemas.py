@@ -1,7 +1,7 @@
 """Kontrak JSON Modul 2 — Physical Inspection.
 
-Model di file ini adalah penegak (*enforcer*) dari ``CONTRACT-VISION.md``, persis
-seperti hubungan ``document/schemas.py`` dengan ``CONTRACT.md``.
+Model di file ini adalah penegak (*enforcer*) dari ``CONTRACT.md`` di folder yang
+sama, persis seperti hubungan ``document/schemas.py`` dengan kontrak modulnya.
 
 Dua janji yang dijaga di sini:
 

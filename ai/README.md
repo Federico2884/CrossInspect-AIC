@@ -3,8 +3,9 @@
 Service FastAPI untuk **Modul 1 (Document Parsing)**: menerima Surat Jalan atau Invoice berupa
 PDF/foto, lalu mengembalikan isinya sebagai JSON terstruktur.
 
-Bentuk response-nya dikunci oleh [`CONTRACT.md`](CONTRACT.md). Kalau dokumen itu dan model
-Pydantic di `app/modules/document/schemas.py` berbeda, modelnya yang benar.
+Bentuk response-nya dikunci oleh kontrak yang tinggal di folder modulnya masing-masing:
+[Modul 1](app/modules/document/CONTRACT.md) dan [Modul 2](app/modules/vision/CONTRACT.md).
+Kalau kontrak itu dan model Pydantic di sebelahnya berbeda, modelnya yang benar.
 
 ## Tiga image, tiga keperluan
 
