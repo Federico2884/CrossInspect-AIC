@@ -120,6 +120,81 @@ def test_matches_are_returned_in_truth_order():
     assert [m.truth_index for m in result.matches] == [0, 1, 2]
 
 
+# --------------------------------------------------------------------------
+# Sapuan cadangan: jumlah + satuan
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class Row2:
+    """Baris lengkap — sapuan cadangan butuh jumlah dan satuan."""
+
+    item_name: str
+    quantity: int
+    unit_raw: str
+
+
+def test_row_found_but_misnamed_counts_as_found_not_missing():
+    """Bug nyata sj_0030: kode barang masuk ke kolom nama.
+
+    Barisnya ada dan angkanya benar; melaporkannya sebagai 'tidak ketemu'
+    menyamarkan bug penempatan kolom sebagai bug deteksi baris.
+    """
+    truth = [Row2("Teh Botol Sosro 250ml", 114, "Box")]
+    predicted = [Row2("SSR-526", 114, "Box")]
+
+    result = match_items(truth, predicted)
+
+    assert result.recall == 1.0
+    assert len(result.matches) == 1
+    assert result.matches[0].by_name is False
+    assert result.name_matches == 0
+    assert result.misnamed_matches == 1
+
+
+def test_name_match_is_preferred_over_the_fallback():
+    truth = [Row2("Teh Botol Sosro 250ml", 114, "Box")]
+    predicted = [Row2("Teh Botol Sosro 250ml", 114, "Box")]
+
+    result = match_items(truth, predicted)
+
+    assert result.matches[0].by_name is True
+    assert result.name_matches == 1
+
+
+def test_fallback_refuses_to_guess_when_two_rows_share_quantity_and_unit():
+    """Kalau tidak ada cara jujur memilih, jangan memilih."""
+    truth = [Row2("Barang A", 10, "Dus"), Row2("Barang B", 10, "Dus")]
+    predicted = [Row2("KODE-1", 10, "Dus"), Row2("KODE-2", 10, "Dus")]
+
+    result = match_items(truth, predicted)
+
+    assert result.matches == []
+    assert result.recall == 0.0
+
+
+def test_fallback_needs_both_quantity_and_unit_to_agree():
+    truth = [Row2("Teh Botol Sosro 250ml", 114, "Box")]
+
+    assert match_items(truth, [Row2("SSR-526", 114, "Karton")]).matches == []
+    assert match_items(truth, [Row2("SSR-526", 99, "Box")]).matches == []
+
+
+def test_fallback_ignores_case_and_padding_in_the_unit():
+    truth = [Row2("Teh Botol Sosro 250ml", 114, "Box")]
+    result = match_items(truth, [Row2("SSR-526", 114, " box ")])
+
+    assert len(result.matches) == 1
+    assert result.matches[0].by_name is False
+
+
+def test_rows_without_quantities_do_not_fall_back():
+    """Baris tanpa jumlah tidak boleh terjodoh hanya karena sama-sama kosong."""
+    result = match_items(rows("Barang A"), rows("Sesuatu Yang Lain"))
+
+    assert result.matches == []
+
+
 def test_normalize_and_similarity_basics():
     assert normalize_name("  Susu   UHT, 250ml! ") == "susu uht 250ml"
     assert normalize_name(None) == ""

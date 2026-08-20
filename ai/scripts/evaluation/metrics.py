@@ -54,7 +54,8 @@ class DocumentScore:
     # Menemukan baris.
     rows_truth: int = 0
     rows_predicted: int = 0
-    rows_matched: int = 0
+    rows_matched: int = 0  # ketemu, lewat nama maupun lewat jumlah+satuan
+    rows_name_matched: int = 0  # ketemu lewat namanya — namanya memang terbaca
     rows_exact_name: int = 0
 
     # Membaca isi baris — penyebut selalu rows_matched.
@@ -138,6 +139,7 @@ def score_document(
 
     result: MatchResult = match_items(truth_items, predicted_items, threshold)
     score.rows_matched = len(result.matches)
+    score.rows_name_matched = result.name_matches
     score.rows_exact_name = result.exact_matches
 
     item_confidences = list(response.confidence.items)
@@ -185,6 +187,7 @@ class Aggregate:
     rows_truth: int = 0
     rows_predicted: int = 0
     rows_matched: int = 0
+    rows_name_matched: int = 0
     rows_exact_name: int = 0
 
     field_totals: dict[str, int] = field(default_factory=dict)
@@ -223,6 +226,7 @@ class Aggregate:
         self.rows_truth += score.rows_truth
         self.rows_predicted += score.rows_predicted
         self.rows_matched += score.rows_matched
+        self.rows_name_matched += score.rows_name_matched
         self.rows_exact_name += score.rows_exact_name
 
         for name in self.ITEM_FIELDS:
@@ -247,6 +251,17 @@ class Aggregate:
     @property
     def exact_name_rate(self) -> float | None:
         return _ratio(self.rows_exact_name, self.rows_truth)
+
+    @property
+    def name_read_rate(self) -> float | None:
+        """Dari baris yang ketemu, berapa yang namanya benar-benar terbaca.
+
+        Kurang dari 100% berarti model menemukan barisnya dan menuliskan
+        angkanya dengan benar, tetapi mengisi kolom nama dengan sesuatu yang
+        lain — mis. kode barang. Itu bug penempatan kolom, bukan bug deteksi
+        baris, dan tanpa angka terpisah keduanya tampak sama.
+        """
+        return _ratio(self.rows_name_matched, self.rows_matched)
 
     @property
     def mean_latency(self) -> float | None:

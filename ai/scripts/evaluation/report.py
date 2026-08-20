@@ -37,13 +37,15 @@ def pct(value: float | None) -> str:
 
 def _rows_table(buckets: Sequence[Aggregate]) -> list[str]:
     lines = [
-        "| Kelompok | Dokumen | JSON terbaca | Recall baris | Presisi baris | Nama persis |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Kelompok | Dokumen | JSON terbaca | Recall baris | Presisi baris | "
+        "Nama terbaca | Nama persis |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for bucket in buckets:
         lines.append(
             f"| {bucket.label} | {bucket.documents} | {pct(bucket.parse_rate)} | "
-            f"{pct(bucket.recall)} | {pct(bucket.precision)} | {pct(bucket.exact_name_rate)} |"
+            f"{pct(bucket.recall)} | {pct(bucket.precision)} | "
+            f"{pct(bucket.name_read_rate)} | {pct(bucket.exact_name_rate)} |"
         )
     return lines
 
@@ -102,9 +104,13 @@ def render(scores: Sequence[DocumentScore], engine: str, threshold: float) -> st
         "",
         "## Menemukan baris",
         "",
-        f"Penjodohan memakai kemiripan nama dengan ambang {threshold:.2f}. Kolom "
-        "*Nama persis* menghitung baris yang namanya sama tepat setelah normalisasi;",
-        "selisihnya terhadap *Recall* adalah baris yang terbaca tetapi ditulis sedikit berbeda.",
+        f"Penjodohan memakai kemiripan nama dengan ambang {threshold:.2f}, lalu sapuan kedua "
+        "memakai jumlah+satuan untuk baris yang namanya meleset.",
+        "",
+        "*Recall* = barisnya ketemu, dengan cara apa pun. *Nama terbaca* = dari baris yang "
+        "ketemu, berapa yang ketemu lewat namanya sendiri — kurang dari 100% berarti model "
+        "menemukan baris dan menulis angkanya dengan benar, tetapi mengisi kolom nama dengan "
+        "hal lain (mis. kode barang). *Nama persis* lebih ketat lagi: ejaannya sama tepat.",
         "",
         *_rows_table([overall, *by_source]),
         "",
