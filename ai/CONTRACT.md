@@ -12,6 +12,10 @@ Ditulis untuk siapa pun yang menulis klien Laravel atau cross-check engine.
 |---|---|---|
 | Modul 1 — Document Parsing | `POST /document/parse` | [`app/modules/document/CONTRACT.md`](app/modules/document/CONTRACT.md) |
 | Modul 2 — Physical Inspection | `POST /vision/inspect` | [`app/modules/vision/CONTRACT.md`](app/modules/vision/CONTRACT.md) |
+| Modul 3 — Cross-Check Engine | `POST /crosscheck` | [`app/modules/crosscheck/CONTRACT.md`](app/modules/crosscheck/CONTRACT.md) |
+
+Modul 3 adalah pengecualian dari beberapa aturan di bawah: ia menerima **JSON**, bukan unggahan
+berkas, sehingga batas 20 MB dan aturan magic bytes tidak berlaku baginya.
 
 Tiap kontrak modul ditegakkan oleh `schemas.py` di folder yang sama. Kalau kontrak dan model
 Pydantic-nya berbeda, **modelnya yang benar** dan dokumennya yang salah.

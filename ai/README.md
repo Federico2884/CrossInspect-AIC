@@ -7,7 +7,11 @@ error yang sama; yang membedakan hanya isi responsnya.
 |---|---|---|---|
 | `POST /document/parse` | Modul 1 — Document Parsing | Surat Jalan / Invoice (PDF, PNG, JPEG) | key-value + line item terstruktur |
 | `POST /vision/inspect` | Modul 2 — Physical Inspection | foto tumpukan barang (PNG, JPEG) | jumlah kemasan + kotak deteksi |
+| `POST /crosscheck` | Modul 3 — Cross-Check Engine | dua respons di atas, sebagai JSON | vonis kecocokan dokumen vs fisik |
 | `GET /health` | — | — | liveness, dipakai `depends_on` compose |
+
+Modul 3 tidak memuat model apa pun — ia murni aturan, menjawab dalam milidetik. Laravel
+memanggil dua endpoint pertama, lalu menyerahkan kedua hasilnya ke `/crosscheck`.
 
 Bentuk response dikunci oleh kontrak. Aturan yang berlaku di semua modul ada di
 [`CONTRACT.md`](CONTRACT.md); yang khas tiap modul ada di folder modulnya —
