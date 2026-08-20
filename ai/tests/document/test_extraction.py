@@ -1,0 +1,303 @@
+"""Test ekstraksi: mengubah keluaran model yang tidak rapi menjadi kontrak.
+
+Fokusnya pada kelakuan model di dunia nyata — pagar markdown, kalimat penutup,
+field yang hilang, angka bergaya Indonesia — dan pada satu janji keras:
+seburuk apa pun keluarannya, fungsi di sini tidak melempar.
+"""
+
+import json
+from datetime import date
+
+import pytest
+
+from app.modules.document.extraction import (
+    ExtractedPage,
+    TokenSpan,
+    assemble_response,
+    build_item,
+    build_token_spans,
+    coerce_int,
+    confidence_for_value,
+    extract_json_object,
+    extract_page,
+    parse_indonesian_date,
+    span_confidence,
+)
+from app.modules.document.schemas import DocumentType, UnitNormalized
+
+PAYLOAD = {
+    "document_type": "SURAT_JALAN",
+    "document_number": "SJ/2026/08/00142",
+    "document_date": "12 Agustus 2026",
+    "sender": "PT Sinar Terang",
+    "recipient": "Toko Maju",
+    "items": [
+        {
+            "item_name": "Susu UHT 250ml",
+            "sku": "ULT-250",
+            "quantity": 10,
+            "unit_raw": "Karton",
+            "quantity_per_unit": 12,
+        }
+    ],
+}
+
+
+# --------------------------------------------------------------------------
+# JSON yang tidak taat format
+# --------------------------------------------------------------------------
+
+
+def test_reads_plain_json():
+    assert extract_json_object(json.dumps(PAYLOAD))["document_number"] == "SJ/2026/08/00142"
+
+
+def test_reads_json_wrapped_in_markdown_fences():
+    text = f"```json\n{json.dumps(PAYLOAD)}\n```"
+    assert extract_json_object(text)["document_number"] == "SJ/2026/08/00142"
+
+
+def test_reads_json_followed_by_chatter():
+    """Model sering menambah kalimat penutup. Itu normal, bukan kegagalan."""
+    text = json.dumps(PAYLOAD) + "\n\nSemoga membantu!"
+    assert extract_json_object(text)["sender"] == "PT Sinar Terang"
+
+
+def test_braces_inside_strings_do_not_break_balancing():
+    payload = {"document_number": "SJ/{2026}/08", "items": []}
+    assert extract_json_object(json.dumps(payload))["document_number"] == "SJ/{2026}/08"
+
+
+@pytest.mark.parametrize("text", ["", "tidak ada JSON di sini", "{ rusak", "[1, 2, 3]"])
+def test_unparseable_output_returns_none_not_an_exception(text: str):
+    assert extract_json_object(text) is None
+
+
+# --------------------------------------------------------------------------
+# Tanggal
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("12 Agustus 2026", date(2026, 8, 12)),
+        ("1 Januari 2026", date(2026, 1, 1)),
+        ("31 Desember 2025", date(2025, 12, 31)),
+        ("12-08-2026", date(2026, 8, 12)),
+        ("12/08/2026", date(2026, 8, 12)),
+        ("2026-08-12", date(2026, 8, 12)),
+    ],
+)
+def test_parses_the_three_styles_the_dataset_prints(raw: str, expected: date):
+    assert parse_indonesian_date(raw) == expected
+
+
+def test_numeric_dates_are_day_first():
+    """05/03/2026 di dokumen Indonesia berarti 5 Maret, bukan 3 Mei.
+
+    Salah membaca ini menghasilkan tanggal yang tetap masuk akal — jenis bug
+    yang lolos dari mata karena hasilnya tidak kelihatan aneh.
+    """
+    assert parse_indonesian_date("05/03/2026") == date(2026, 3, 5)
+
+
+@pytest.mark.parametrize("raw", [None, "", "bukan tanggal", "32/13/2026"])
+def test_unreadable_dates_become_none(raw):
+    assert parse_indonesian_date(raw) is None
+
+
+# --------------------------------------------------------------------------
+# Angka & baris barang
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(12, 12), ("12", 12), ("1.200", 1200), ("1,200", 1200), (12.0, 12), ("12 pcs", 12)],
+)
+def test_coerces_numbers_written_in_document_style(raw, expected):
+    assert coerce_int(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [None, "", "banyak", True, {}])
+def test_unusable_numbers_are_none(raw):
+    assert coerce_int(raw) is None
+
+
+def test_builds_an_item_and_derives_total_pieces():
+    item = build_item(PAYLOAD["items"][0], source_page=1)
+
+    assert item.item_name == "Susu UHT 250ml"
+    assert item.quantity == 10
+    assert item.unit_raw == "Karton"
+    assert item.unit_normalized == UnitNormalized.KARTON
+    assert item.quantity_per_unit == 12
+    assert item.total_pieces == 120  # diturunkan oleh kontrak, bukan oleh model
+
+
+def test_unusual_unit_keeps_raw_text_and_falls_back_to_unknown():
+    item = build_item({"item_name": "Rokok", "quantity": 5, "unit_raw": "Slop"}, 1)
+
+    assert item.unit_raw == "Slop"
+    assert item.unit_normalized == UnitNormalized.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"quantity": 5, "unit_raw": "Dus"},  # tanpa nama
+        {"item_name": "Beras", "unit_raw": "Sak"},  # tanpa jumlah
+        {"item_name": "Beras", "quantity": "banyak", "unit_raw": "Sak"},
+        "bukan objek",
+    ],
+)
+def test_half_read_rows_are_dropped(row):
+    """Baris setengah terbaca dibuang, bukan ditebak.
+
+    Baris karangan yang lolos akan dihitung Modul 2 sebagai barang nyata.
+    """
+    assert build_item(row, 1) is None
+
+
+def test_accepts_indonesian_field_names():
+    item = build_item({"nama_barang": "Gula", "jumlah": 3, "satuan": "Zak"}, 1)
+
+    assert item.item_name == "Gula"
+    assert item.unit_normalized == UnitNormalized.SAK
+
+
+# --------------------------------------------------------------------------
+# Confidence
+# --------------------------------------------------------------------------
+
+
+def test_token_spans_track_character_offsets():
+    spans = build_token_spans(["Susu", " UHT", " 250ml"], [0.9, 0.8, 0.7])
+
+    assert [(s.start, s.end) for s in spans] == [(0, 4), (4, 8), (8, 14)]
+
+
+def test_span_confidence_averages_overlapping_tokens():
+    spans = [TokenSpan(0, 4, 1.0), TokenSpan(4, 8, 0.5), TokenSpan(8, 12, 0.0)]
+
+    assert span_confidence(spans, 0, 8) == pytest.approx(0.75)
+    assert span_confidence(spans, 0, 4) == pytest.approx(1.0)
+
+
+def test_span_confidence_is_zero_when_nothing_matches():
+    """Nol lebih jujur daripada angka tinggi yang tidak bisa ditelusuri."""
+    spans = [TokenSpan(0, 4, 0.9)]
+
+    assert span_confidence(spans, 10, 20) == 0.0
+    assert span_confidence(spans, 5, 5) == 0.0
+
+
+def test_confidence_for_value_locates_the_text():
+    text = "SJ/2026/08/00142 lainnya"
+    spans = build_token_spans(["SJ/2026/08/00142", " lainnya"], [0.95, 0.1])
+
+    assert confidence_for_value(text, spans, "SJ/2026/08/00142") == pytest.approx(0.95)
+    assert confidence_for_value(text, spans, "tidak ada") == 0.0
+
+
+# --------------------------------------------------------------------------
+# Halaman -> response
+# --------------------------------------------------------------------------
+
+
+def test_extract_page_reads_a_full_payload():
+    page = extract_page(json.dumps(PAYLOAD), source_page=1)
+
+    assert page.ok is True
+    assert page.document_type == DocumentType.SURAT_JALAN
+    assert page.document_date == date(2026, 8, 12)
+    assert len(page.items) == 1
+    assert page.items[0].source_page == 1
+
+
+def test_extract_page_survives_garbage():
+    page = extract_page("model bingung dan mengoceh", source_page=2)
+
+    assert page.ok is False
+    assert page.items == []
+
+
+def test_assembled_response_satisfies_the_contract():
+    page = extract_page(json.dumps(PAYLOAD), source_page=1)
+    response = assemble_response(
+        [page], page_count=1, truncated=False, total_pages=1, engine_name="x"
+    )
+
+    assert response.document_type == DocumentType.SURAT_JALAN
+    assert response.page_count == 1
+    assert len(response.confidence.items) == len(response.items)
+    assert response.meta.engine == "x"
+    assert response.meta.scenario is None
+
+
+def test_confidence_items_stay_parallel_across_pages():
+    """Kontrak mensyaratkan confidence.items sejajar dengan items."""
+    first = extract_page(json.dumps(PAYLOAD), source_page=1)
+    second = extract_page(json.dumps(PAYLOAD), source_page=2)
+    response = assemble_response(
+        [first, second], page_count=2, truncated=False, total_pages=2, engine_name="x"
+    )
+
+    assert len(response.items) == 2
+    assert len(response.confidence.items) == 2
+
+
+def test_document_fields_come_from_the_first_page_that_has_them():
+    """Kop surat biasanya hanya di halaman pertama; barang tersebar."""
+    blank = ExtractedPage(ok=True, raw_text="{}")
+    filled = extract_page(json.dumps(PAYLOAD), source_page=2)
+    response = assemble_response(
+        [blank, filled], page_count=2, truncated=False, total_pages=2, engine_name="x"
+    )
+
+    assert response.document_number == "SJ/2026/08/00142"
+    assert response.sender == "PT Sinar Terang"
+
+
+def test_total_failure_returns_unknown_with_a_warning_not_an_exception():
+    """Model yang gagal total tetap dijawab 200 + warnings, sesuai CONTRACT.md."""
+    page = extract_page("tidak ada JSON", source_page=1)
+    response = assemble_response(
+        [page], page_count=1, truncated=False, total_pages=1, engine_name="x"
+    )
+
+    assert response.document_type == DocumentType.UNKNOWN
+    assert any(warning.code == "UNRECOGNISED_DOCUMENT_TYPE" for warning in response.warnings)
+    assert response.confidence.overall == 0.0
+
+
+def test_truncation_is_reported_with_the_real_total():
+    page = extract_page(json.dumps(PAYLOAD), source_page=1)
+    response = assemble_response(
+        [page], page_count=10, truncated=True, total_pages=14, engine_name="x"
+    )
+
+    truncation = [w for w in response.warnings if w.code == "PAGE_LIMIT_TRUNCATED"]
+    assert len(truncation) == 1
+    assert "14" in truncation[0].message
+
+
+def test_unusual_unit_raises_ambiguous_unit_warning():
+    payload = dict(PAYLOAD, items=[{"item_name": "Rokok", "quantity": 5, "unit_raw": "Slop"}])
+    page = extract_page(json.dumps(payload), source_page=1)
+    response = assemble_response(
+        [page], page_count=1, truncated=False, total_pages=1, engine_name="x"
+    )
+
+    assert any(warning.code == "AMBIGUOUS_UNIT" for warning in response.warnings)
+
+
+def test_source_page_never_exceeds_page_count():
+    """Validator kontrak menolak response yang melanggar ini."""
+    page = extract_page(json.dumps(PAYLOAD), source_page=3)
+    response = assemble_response(
+        [page], page_count=3, truncated=False, total_pages=3, engine_name="x"
+    )
+
+    assert all(item.source_page <= response.page_count for item in response.items)
