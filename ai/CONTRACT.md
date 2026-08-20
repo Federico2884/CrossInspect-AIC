@@ -118,10 +118,15 @@ beserta envelope `error`.
 | `AMBIGUOUS_UNIT` | warning | `unit_raw` tidak terpetakan ke enum; `unit_normalized` menjadi `unknown`. |
 | `UNRECOGNISED_DOCUMENT_TYPE` | error | Bukan Surat Jalan maupun Invoice. |
 | `PAGE_LIMIT_TRUNCATED` | warning | Dokumen melebihi batas 10 halaman. |
-| `QUANTITY_MISMATCH` | warning | Total yang tertulis tidak cocok dengan hasil hitungan. |
+| `QUANTITY_MISMATCH` | warning | **Dicadangkan — belum dipancarkan engine mana pun.** Lihat catatan di bawah. |
 
 Cocokkan berdasarkan `code`. Isi `message` ditujukan untuk dibaca manusia, berbahasa
 Indonesia, dan kalimatnya bisa berubah sewaktu-waktu.
+
+> **Catatan `QUANTITY_MISMATCH`.** Kode ini sudah dipesan tempatnya, tetapi belum pernah
+> dikirim: untuk membandingkan total yang tertulis di dokumen dengan hasil hitungan, engine
+> harus lebih dulu mengekstrak total tercetak itu, dan sekarang belum. Jangan menulis
+> penanganan khusus untuknya — kode ini tidak akan muncul sampai fitur tersebut dikerjakan.
 
 ## Error
 
@@ -136,6 +141,7 @@ Indonesia, dan kalimatnya bisa berubah sewaktu-waktu.
 | 422 | `UNSUPPORTED_FILE_TYPE` | Bukan PDF/PNG/JPEG menurut magic bytes. |
 | 422 | `UNKNOWN_SCENARIO` | `scenario` bukan salah satu dari tujuh yang tersedia. |
 | 422 | `INVALID_REQUEST` | Request tidak valid, misalnya field `file` tidak ada. |
+| 4xx/5xx | `HTTP_ERROR` | Kesalahan HTTP yang tidak ditangani khusus: URL salah ketik (404), method keliru (405), dan sejenisnya. |
 
 Envelope `error` dipakai untuk **semua** kegagalan — bentuk bawaan FastAPI
 `{"detail": …}` tidak pernah bocor keluar.

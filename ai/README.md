@@ -39,6 +39,38 @@ docker compose --profile test run --rm ai-test ruff check .
 
 Generator dataset evaluasi ada di [`scripts/README.md`](scripts/README.md).
 
+## Mengukur akurasi
+
+`scripts/evaluate.py` menilai engine terhadap dataset berlabel step 3 dan menulis
+[`EVALUATION.md`](EVALUATION.md). Cepat dan gratis dengan engine mock — berguna untuk memastikan
+harness-nya sendiri jalan, walau skornya jelas jelek karena mock memang tidak membaca dokumen:
+
+```bash
+docker compose --profile test run --rm ai-test python scripts/evaluate.py --source pdf
+```
+
+Dengan engine asli, `scripts/` dan `data/` tidak ikut ke build context image ML, jadi direktori
+`ai/` perlu di-bind mount:
+
+```bash
+AI_DOCKERFILE=Dockerfile.ml docker compose run --rm --no-deps --user root -v "${PWD}/ai:/srv/ai" -e AI_ENGINE=qwen2vl ai python -u scripts/evaluate.py --sample 12 --seed 42
+```
+
+**`--user root` itu wajib, bukan hiasan.** Image test berjalan sebagai root sedangkan
+`Dockerfile.ml` turun ke `aiuser`; berkas hasil run mock jadi milik root, dan container ML tidak
+bisa menulis ke sana. Tanpa flag itu hasilnya `PermissionError` setelah model selesai dimuat —
+gagal di menit kesekian, bukan di detik pertama.
+
+Hasil per panggilan ditulis ke `data/eval/results-{engine}.jsonl` **saat itu juga**, dan
+menjalankan ulang perintah yang sama akan melanjutkan, bukan mengulang. Run penuh 200 dokumen
+memakan 15–20 jam, jadi sifat itu penting.
+
+Hilangkan `--sample` untuk mengukur seluruh dataset.
+
+> Angka **Jumlah halaman** untuk sumber foto pada `EVALUATION.md` yang ada sekarang keliru:
+> satu foto memang satu halaman, tetapi saat itu dibandingkan dengan jumlah halaman dokumen
+> aslinya. Penilainya sudah diperbaiki; laporannya ikut benar begitu evaluasi dijalankan ulang.
+
 ## Memilih engine
 
 | `AI_ENGINE` | Engine | Syarat |
