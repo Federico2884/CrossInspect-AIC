@@ -209,10 +209,24 @@ class QwenEngine:
                 logger.exception("halaman %s gagal dibaca", page_number)
                 pages.append(ExtractedPage(ok=False, raw_text=""))
 
-        return assemble_response(
+        response = assemble_response(
             pages=pages,
             page_count=len(model_pages),
             truncated=rendered.total_pages > len(model_pages),
             total_pages=rendered.total_pages,
             engine_name=self.name,
         )
+
+        if settings.debug:
+            # Keluaran mentah model hanya bisa dilihat dari sini; begitu JSON
+            # gagal diurai, jejaknya hilang dan yang tersisa cuma "baris tidak
+            # ketemu" tanpa sebab. Ditaruh di meta.debug yang memang sudah ada
+            # di kontrak, dan tetap null selama AI_DEBUG belum dinyalakan —
+            # bentuk response tidak berubah.
+            response.meta.debug = {
+                "raw_pages": [page.raw_text for page in pages],
+                "rendered_pages": rendered.page_count,
+                "total_pages": rendered.total_pages,
+            }
+
+        return response
