@@ -9,7 +9,8 @@ error yang sama; yang membedakan hanya isi responsnya.
 | `POST /vision/inspect` | Modul 2 — Physical Inspection | foto tumpukan barang (PNG, JPEG) | jumlah kemasan + kotak deteksi |
 | `GET /health` | — | — | liveness, dipakai `depends_on` compose |
 
-Bentuk response dikunci oleh kontrak yang tinggal di folder modulnya masing-masing:
+Bentuk response dikunci oleh kontrak. Aturan yang berlaku di semua modul ada di
+[`CONTRACT.md`](CONTRACT.md); yang khas tiap modul ada di folder modulnya —
 [Modul 1](app/modules/document/CONTRACT.md) dan [Modul 2](app/modules/vision/CONTRACT.md).
 Kalau kontrak itu dan model Pydantic di sebelahnya berbeda, modelnya yang benar.
 

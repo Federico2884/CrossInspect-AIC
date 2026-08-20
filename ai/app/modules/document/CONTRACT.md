@@ -1,8 +1,12 @@
 # Kontrak API Document Parsing
 
 Kontrak resmi untuk **Modul 1 (Document Parsing)** CrossInspect AI.
-Ditegakkan oleh model Pydantic di [`app/modules/document/schemas.py`](app/modules/document/schemas.py);
-kalau dokumen ini dan model tersebut sampai berbeda, modelnya yang benar dan dokumen ini yang salah.
+Ditegakkan oleh model Pydantic di [`schemas.py`](schemas.py); kalau dokumen ini dan model
+tersebut sampai berbeda, modelnya yang benar dan dokumen ini yang salah.
+
+Dokumen ini hanya memuat yang **khas Modul 1**. Aturan yang berlaku di semua modul — batas
+unggahan, amplop error, arti `meta`, pembedaan warning dari error — ada di
+[`CONTRACT.md`](../../../CONTRACT.md) induk, dan sebaiknya dibaca lebih dulu.
 
 Pembaca: siapa pun yang menulis klien Laravel. Kontrak ini sudah bisa dipakai hari ini —
 endpoint-nya sudah hidup dan dilayani mock yang deterministik.
@@ -17,15 +21,13 @@ Content-Type: multipart/form-data
 ```
 
 Dari host (untuk debugging): `http://localhost:8001/document/parse`.
-Skema interaktif: `http://localhost:8001/docs`.
 
 | Field | Tipe | Wajib | Keterangan |
 |---|---|---|---|
-| `file` | file | ya | PDF, PNG, atau JPEG. Maksimal **20 MB**. |
-| `scenario` | string | tidak | **Khusus mock.** Memaksa fixture tertentu — lihat [Skenario](#skenario). Diabaikan begitu engine asli masuk. |
+| `file` | file | ya | **PDF, PNG, atau JPEG.** Maksimal 20 MB. |
+| `scenario` | string | tidak | **Khusus mock.** Memaksa fixture tertentu — lihat [Skenario](#skenario). |
 
-Format dideteksi dari **magic bytes**, bukan dari nama file atau `Content-Type` yang
-dikirim. File `.txt` yang diganti namanya jadi `.pdf` akan ditolak.
+PDF adalah satu-satunya format yang diterima Modul 1 tetapi ditolak Modul 2.
 
 ---
 
@@ -77,7 +79,7 @@ dikirim. File `.txt` yang diganti namanya jadi `.pdf` akan ditolak.
 | `items[]` | array | Boleh kosong. |
 | `confidence` | object | `document_number`, `items[]` (sejajar dengan `items`), `overall`. Semuanya 0.0–1.0. |
 | `warnings[]` | array | Masalah kualitas parse. **Bukan** error. |
-| `meta` | object | `engine`, `device` (selalu `"cpu"`), `processing_ms`, `scenario`, `debug`. |
+| `meta` | object | Field umum — lihat [kontrak induk](../../../CONTRACT.md#meta). Modul 1 tidak menambah field. |
 
 ### Field item
 
@@ -103,12 +105,10 @@ dikirim. File `.txt` yang diganti namanya jadi `.pdf` akan ditolak.
 
 ---
 
-## Warning vs error
+## Warning
 
-Dokumen yang **hasil parse-nya buruk** tetap mengembalikan **200 beserta `warnings[]`** —
-supaya UI bisa menampilkan ketidakpastian ("barang 3 tidak jelas, mohon dikonfirmasi")
-alih-alih diam-diam memercayai angka yang salah. Request yang **gagal** mengembalikan 4xx
-beserta envelope `error`.
+Prinsip warning-vs-error ada di [kontrak induk](../../../CONTRACT.md#warning-vs-error).
+Kode berikut khas Modul 1:
 
 | Code | Severity | Arti |
 |---|---|---|
@@ -120,33 +120,16 @@ beserta envelope `error`.
 | `PAGE_LIMIT_TRUNCATED` | warning | Dokumen melebihi batas 10 halaman. |
 | `QUANTITY_MISMATCH` | warning | Total yang tertulis tidak cocok dengan hasil hitungan. |
 
-Cocokkan berdasarkan `code`. Isi `message` ditujukan untuk dibaca manusia, berbahasa
-Indonesia, dan kalimatnya bisa berubah sewaktu-waktu.
-
 ## Error
 
-```json
-{ "error": { "code": "FILE_TOO_LARGE", "message": "File exceeds the 20 MB limit.", "detail": "received 21000000 bytes" } }
-```
-
-| HTTP | Code | Penyebab |
-|---|---|---|
-| 413 | `FILE_TOO_LARGE` | Lebih dari 20 MB. |
-| 422 | `EMPTY_FILE` | Nol byte. |
-| 422 | `UNSUPPORTED_FILE_TYPE` | Bukan PDF/PNG/JPEG menurut magic bytes. |
-| 422 | `UNKNOWN_SCENARIO` | `scenario` bukan salah satu dari tujuh yang tersedia. |
-| 422 | `INVALID_REQUEST` | Request tidak valid, misalnya field `file` tidak ada. |
-
-Envelope `error` dipakai untuk **semua** kegagalan — bentuk bawaan FastAPI
-`{"detail": …}` tidak pernah bocor keluar.
+Modul 1 tidak menambah kode error di luar [yang umum](../../../CONTRACT.md#amplop-error).
+`UNSUPPORTED_FILE_TYPE` di sini berarti berkasnya bukan PDF, PNG, maupun JPEG.
 
 ---
 
 ## Skenario
 
-Khusus mock. Kirim `scenario` untuk memaksa salah satu; kalau tidak dikirim, satu skenario
-dipilih secara deterministik dari hash isi file, sehingga unggahan yang sama selalu
-menghasilkan respons yang sama.
+Tujuh fixture mock. Cara kerjanya ada di [kontrak induk](../../../CONTRACT.md#skenario-khusus-mock).
 
 | `scenario` | Yang diuji |
 |---|---|
@@ -169,15 +152,9 @@ curl -F "file=@sample.pdf" -F "scenario=mixed_units" http://localhost:8001/docum
 
 ## Jaminan stabilitas
 
-Step 4–5 mengganti mock dengan Qwen2-VL di balik antarmuka yang sama
-([`engines/base.py`](app/modules/document/engines/base.py)). Saat itu terjadi:
+Mock dan Qwen2-VL duduk di balik antarmuka yang sama ([`engines/base.py`](engines/base.py)),
+jadi menukar keduanya **tidak mengubah bentuk respons** — field, tipe, dan enum-nya sama persis.
+Jaminan umum soal `meta` ada di [kontrak induk](../../../CONTRACT.md#yang-dijamin-stabil).
 
-- Bentuk respons **tidak berubah**. Field, tipe, dan enum-nya sama persis.
-- `meta.engine` berubah dari `"mock"` menjadi id model — dari situlah kamu tahu engine mana
-  yang menjawab.
-- `meta.scenario` menjadi `null`; field `scenario` diabaikan.
-- `meta.device` tetap `"cpu"`. Layanan ini CPU-only secara desain — tidak ada jalur kode GPU,
-  dan image ML memastikannya saat build.
-
-Selebihnya — kode warning, kode error, dan pemisahan `quantity` / `total_pieces` — adalah
+Yang khas Modul 1: pemisahan `quantity` / `total_pieces` dan kode warning di atas adalah
 kontrak, bukan detail implementasi.

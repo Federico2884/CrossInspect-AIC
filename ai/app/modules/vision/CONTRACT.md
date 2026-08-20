@@ -1,8 +1,12 @@
 # Kontrak API Physical Inspection
 
 Kontrak resmi untuk **Modul 2 (Physical Inspection)** CrossInspect AI.
-Ditegakkan oleh model Pydantic di [`app/modules/vision/schemas.py`](app/modules/vision/schemas.py);
-kalau dokumen ini dan model tersebut sampai berbeda, modelnya yang benar dan dokumen ini yang salah.
+Ditegakkan oleh model Pydantic di [`schemas.py`](schemas.py); kalau dokumen ini dan model
+tersebut sampai berbeda, modelnya yang benar dan dokumen ini yang salah.
+
+Dokumen ini hanya memuat yang **khas Modul 2**. Aturan yang berlaku di semua modul — batas
+unggahan, amplop error, arti `meta`, pembedaan warning dari error — ada di
+[`CONTRACT.md`](../../../CONTRACT.md) induk, dan sebaiknya dibaca lebih dulu.
 
 Pembaca: siapa pun yang menulis klien Laravel atau cross-check engine. Kontrak ini
 sudah bisa dipakai hari ini — endpoint-nya hidup, dilayani model YOLO asli bila
@@ -18,14 +22,13 @@ Content-Type: multipart/form-data
 ```
 
 Dari host (untuk debugging): `http://localhost:8001/vision/inspect`.
-Skema interaktif: `http://localhost:8001/docs`.
 
 | Field | Tipe | Wajib | Keterangan |
 |---|---|---|---|
-| `file` | file | ya | PNG, JPEG, atau WebP. Maksimal **20 MB**. PDF **ditolak**. |
-| `scenario` | string | tidak | **Khusus mock.** Memaksa fixture tertentu — lihat [Skenario](#skenario). Diabaikan saat engine YOLO aktif. |
+| `file` | file | ya | **PNG, JPEG, atau WebP.** Maksimal 20 MB. PDF **ditolak**. |
+| `scenario` | string | tidak | **Khusus mock.** Memaksa fixture tertentu — lihat [Skenario](#skenario). |
 
-Format dideteksi dari **magic bytes**, bukan dari nama file atau `Content-Type`.
+Perhatikan bedanya dari Modul 1: WebP diterima di sini, PDF tidak.
 
 ### Engine mana yang sedang melayani
 
@@ -80,7 +83,7 @@ tetap murah, sedangkan ini menyentuh filesystem.
 | `count_confidence` | object | `mean_detection`, `min_detection`, `overall`. Semuanya 0.0–1.0. |
 | `defect` | object | `status` + `findings[]`. Lihat [Integritas fisik](#integritas-fisik). |
 | `warnings[]` | array | Masalah kualitas inspeksi. **Bukan** error. |
-| `meta` | object | `engine`, `device` (selalu `"cpu"`), `processing_ms`, `model`, `conf_threshold`, dimensi gambar, `scenario`, `debug`. |
+| `meta` | object | Field umum di [kontrak induk](../../../CONTRACT.md#meta), ditambah `model`, `conf_threshold`, `image_width`, `image_height`. |
 
 ### Field deteksi
 
@@ -128,11 +131,10 @@ sangat berbeda bagi petugas gudang.
 
 ---
 
-## Warning vs error
+## Warning
 
-Foto yang **hasil deteksinya buruk** tetap mengembalikan **200 beserta `warnings[]`**.
-Request yang **gagal** mengembalikan 4xx/5xx beserta envelope `error` yang sama
-dengan Modul 1.
+Prinsip warning-vs-error ada di [kontrak induk](../../../CONTRACT.md#warning-vs-error).
+Kode berikut khas Modul 2:
 
 | Code | Severity | Arti |
 |---|---|---|
@@ -143,27 +145,21 @@ dengan Modul 1.
 | `LOW_CONFIDENCE_DETECTION` | warning | Satu objek lemah; `detection_index` menunjuk ke `detections[i]`. |
 | `IMAGE_LOW_RESOLUTION` | warning | Sisi terpendek di bawah ambang; akurasi menurun. |
 
-Cocokkan berdasarkan `code`. Isi `message` ditujukan untuk dibaca manusia,
-berbahasa Indonesia, dan kalimatnya bisa berubah sewaktu-waktu.
-
 ## Error
+
+Di luar [kode umum](../../../CONTRACT.md#amplop-error), Modul 2 menambah dua kode.
+`UNSUPPORTED_FILE_TYPE` di sini berarti berkasnya bukan PNG, JPEG, maupun WebP.
 
 | HTTP | Code | Penyebab |
 |---|---|---|
-| 413 | `FILE_TOO_LARGE` | Lebih dari 20 MB. |
-| 422 | `EMPTY_FILE` | Nol byte. |
-| 422 | `UNSUPPORTED_FILE_TYPE` | Bukan PNG/JPEG/WebP menurut magic bytes. |
 | 422 | `UNREADABLE_IMAGE` | Magic bytes benar tetapi isinya tidak bisa didekode. |
-| 422 | `UNKNOWN_SCENARIO` | `scenario` bukan salah satu dari tujuh yang tersedia. |
-| 422 | `INVALID_REQUEST` | Field `file` tidak dikirim. |
 | 503 | `VISION_ENGINE_UNAVAILABLE` | `AI_VISION_ENGINE=yolo` dipaksa tetapi ultralytics/bobot tidak ada. |
 
 ---
 
 ## Skenario
 
-Khusus mock. Kalau `scenario` tidak dikirim, satu skenario dipilih deterministik
-dari hash isi berkas — foto yang sama selalu memberi respons yang sama.
+Tujuh fixture mock. Cara kerjanya ada di [kontrak induk](../../../CONTRACT.md#skenario-khusus-mock).
 
 | `scenario` | Yang diuji |
 |---|---|
@@ -209,17 +205,19 @@ untuk menaikkan bendera, tidak cukup untuk mengoreksi hitungan.
 ## Jaminan stabilitas
 
 Training ulang mengganti bobot di balik antarmuka yang sama
-([`engines/base.py`](app/modules/vision/engines/base.py)). Saat itu terjadi:
+([`engines/base.py`](engines/base.py)), dan **bentuk respons tidak berubah** — field, tipe,
+dan aturan validasinya sama persis. Jaminan umum soal `meta` ada di
+[kontrak induk](../../../CONTRACT.md#yang-dijamin-stabil).
 
-- Bentuk respons **tidak berubah**. Field, tipe, dan aturan validasinya sama persis.
+Yang khas Modul 2 saat bobot ditukar:
+
 - `meta.engine` tetap `"yolo"`; `meta.model` menunjuk nama berkas bobot yang dipakai.
 - `class_counts` bisa bertambah kunci bila model baru punya kelas tambahan —
   kontrak sudah menampungnya sejak awal, jadi ini **bukan** perubahan breaking.
 - `defect.status` berpindah dari `unavailable` begitu model kerusakan tersedia.
-- `meta.device` tetap `"cpu"`. Layanan ini CPU-only secara desain.
 
-Selebihnya — kode warning, kode error, normalisasi bbox, dan aturan
-`detected_count == len(detections)` — adalah kontrak, bukan detail implementasi.
+Normalisasi bbox dan aturan `detected_count == len(detections)` adalah kontrak, bukan detail
+implementasi.
 
 ---
 
