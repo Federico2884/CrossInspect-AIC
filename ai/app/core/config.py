@@ -31,8 +31,28 @@ class Settings(BaseSettings):
     qwen_model_id: str = "Qwen/Qwen2-VL-2B-Instruct"
     qwen_max_new_tokens: int = 768
     # Batas jumlah piksel yang dilihat model (knob resmi Qwen2-VL lewat
-    # qwen-vl-utils). Nilai awal ~1280 visual token; angka finalnya ditentukan
-    # setelah latency diukur, bukan ditebak.
+    # qwen-vl-utils). 1_003_520 px = ~1260 visual token untuk halaman A4.
+    #
+    # Cap dibiarkan tinggi karena menurunkannya ternyata tidak membeli apa-apa.
+    # Tiga dokumen bertabel 10 baris, detik & (nama+jumlah benar)/10:
+    #
+    #                    ~1260 token      ~494 token
+    #   sj_0029 PDF      254 s  10/10     177 s   9/10
+    #   sj_0029 foto     250 s  10/10     176 s   7/10
+    #   sj_0030 PDF      185 s   0/10     186 s   0/10
+    #   sj_0030 foto     168 s   4/10     155 s   0/10
+    #   sj_0043 PDF      200 s  10/10     198 s   9/10
+    #   sj_0043 foto     176 s   2/10     191 s   8/10
+    #
+    # Hanya sj_0029 yang jelas lebih cepat saat cap diturunkan; pada dua dokumen
+    # lain waktunya praktis sama. Sebabnya: yang memakan waktu adalah menuliskan
+    # JSON baris per baris, bukan melihat gambarnya. Jadi memperkecil gambar
+    # menukar akurasi dengan kecepatan yang sering tidak muncul.
+    #
+    # Angka akurasi di atas memakai pencocokan string persis dan hanya 3 dokumen
+    # — indikator kasar, bukan metrik. Perhatikan sj_0030 (0/10 di semua cap,
+    # padahal JSON-nya valid) dan sj_0043 foto (nama 8/10 tapi nama+jumlah
+    # 2/10): keduanya pertanyaan untuk evaluasi step 5, bukan bukti soal cap.
     qwen_max_pixels: int = 1_003_520
     qwen_min_pixels: int = 200_704
     # Halaman yang benar-benar diumpankan ke model. Terpisah dari max_pages
