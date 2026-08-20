@@ -24,6 +24,21 @@ class Settings(BaseSettings):
     # kecil tidak hancur, lalu hasilnya diperkecil untuk model.
     render_max_long_edge: int = 1600
 
+    # Engine aktif: 'mock' (image slim) atau 'qwen2vl' (butuh Dockerfile.ml).
+    # Default sengaja mock supaya klien Laravel dan image ringan tidak terpaksa
+    # ikut menarik torch hanya untuk menjalankan kontrak.
+    engine: str = "mock"
+    qwen_model_id: str = "Qwen/Qwen2-VL-2B-Instruct"
+    qwen_max_new_tokens: int = 768
+    # Batas jumlah piksel yang dilihat model (knob resmi Qwen2-VL lewat
+    # qwen-vl-utils). Nilai awal ~1280 visual token; angka finalnya ditentukan
+    # setelah latency diukur, bukan ditebak.
+    qwen_max_pixels: int = 1_003_520
+    qwen_min_pixels: int = 200_704
+    # Halaman yang benar-benar diumpankan ke model. Terpisah dari max_pages
+    # supaya biaya inference bisa dibatasi tanpa mengubah batas render.
+    qwen_max_model_pages: int = 10
+
     # Jumlah thread BLAS/OMP. Di-set juga sebagai ENV di Dockerfile supaya
     # library yang membaca env saat import sudah melihat nilai yang benar.
     omp_num_threads: int = 4

@@ -23,7 +23,16 @@ _SIGNATURES: tuple[tuple[bytes, str], ...] = (
 
 
 def get_engine() -> DocumentEngine:
-    """Engine aktif. Step 4 menukar ini dengan Qwen2-VL di balik protokol yang sama."""
+    """Engine aktif, dipilih lewat ``AI_ENGINE``.
+
+    Impor Qwen dilakukan di dalam cabang, bukan di puncak berkas: image slim
+    tidak punya torch sama sekali, dan menyentuh modulnya saja sudah cukup
+    untuk membuat service gagal start.
+    """
+    if get_settings().engine.lower() in {"qwen", "qwen2vl", "qwen2-vl"}:
+        from app.modules.document.engines.qwen import QwenEngine
+
+        return QwenEngine()
     return MockEngine()
 
 
