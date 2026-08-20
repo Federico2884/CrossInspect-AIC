@@ -1,9 +1,15 @@
 # CrossInspect AI — Service
 
-Service FastAPI untuk **Modul 1 (Document Parsing)**: menerima Surat Jalan atau Invoice berupa
-PDF/foto, lalu mengembalikan isinya sebagai JSON terstruktur.
+Satu service FastAPI, dua modul inferensi. Keduanya berbagi image, konfigurasi, dan amplop
+error yang sama; yang membedakan hanya isi responsnya.
 
-Bentuk response-nya dikunci oleh kontrak yang tinggal di folder modulnya masing-masing:
+| Endpoint | Modul | Masukan | Keluaran |
+|---|---|---|---|
+| `POST /document/parse` | Modul 1 — Document Parsing | Surat Jalan / Invoice (PDF, PNG, JPEG) | key-value + line item terstruktur |
+| `POST /vision/inspect` | Modul 2 — Physical Inspection | foto tumpukan barang (PNG, JPEG) | jumlah kemasan + kotak deteksi |
+| `GET /health` | — | — | liveness, dipakai `depends_on` compose |
+
+Bentuk response dikunci oleh kontrak yang tinggal di folder modulnya masing-masing:
 [Modul 1](app/modules/document/CONTRACT.md) dan [Modul 2](app/modules/vision/CONTRACT.md).
 Kalau kontrak itu dan model Pydantic di sebelahnya berbeda, modelnya yang benar.
 
@@ -13,16 +19,20 @@ Kalau kontrak itu dan model Pydantic di sebelahnya berbeda, modelnya yang benar.
 |---|---|---|
 | `Dockerfile` | FastAPI + PyMuPDF + Pillow | Runtime harian: engine mock dan rendering. Ringan. |
 | `Dockerfile.dev` | + pytest, ruff, ReportLab, Augraphy | Test dan generator dataset. **Tidak pernah dideploy.** |
-| `Dockerfile.ml` | + torch/transformers CPU | Inference Qwen2-VL sungguhan. |
+| `Dockerfile.ml` | + torch/transformers/ultralytics CPU | Inference sungguhan: Qwen2-VL dan YOLO. |
 
-Image runtime memang **tidak bisa** menjalankan test-nya sendiri, dan itu disengaja:
+Image slim tidak memuat torch, jadi **kedua modul berjalan sebagai mock di sana**. Itu
+disengaja: sebagian besar pekerjaan kontrak dan klien Laravel tidak perlu menunggu inference
+CPU.
+
+Image runtime memang **tidak bisa** menjalankan test-nya sendiri, dan itu juga disengaja:
 `requirements-dev.txt` di-exclude dari build context-nya, sedangkan Augraphy menarik
 `opencv-python` versi penuh yang butuh pustaka X11. Keduanya tidak layak ikut ke image yang
 dikirim.
 
 ## Menjalankan
 
-Service (image slim, engine mock):
+Service (image slim, kedua modul memakai mock):
 
 ```bash
 docker compose up -d ai
@@ -42,35 +52,53 @@ Generator dataset evaluasi ada di [`scripts/README.md`](scripts/README.md).
 
 ## Memilih engine
 
-| `AI_ENGINE` | Engine | Syarat |
+Tiap modul punya saklarnya sendiri, dan keduanya butuh `AI_DOCKERFILE=Dockerfile.ml` untuk
+engine aslinya.
+
+**Modul 1 — `AI_ENGINE`**
+
+| Nilai | Engine | Syarat |
 |---|---|---|
 | `mock` (default) | 7 fixture deterministik | image slim sudah cukup |
-| `qwen2vl` | Qwen2-VL-2B-Instruct | **wajib** `AI_DOCKERFILE=Dockerfile.ml` |
+| `qwen2vl` | Qwen2-VL-2B-Instruct | **wajib** `Dockerfile.ml` |
+
+**Modul 2 — `AI_VISION_ENGINE`**
+
+| Nilai | Engine | Syarat |
+|---|---|---|
+| `auto` (default) | YOLO bila tersedia, selebihnya mock | menyesuaikan image |
+| `yolo` | YOLO paksa | **wajib** `Dockerfile.ml`; gagal keras bila bobot/ultralytics hilang |
+| `mock` | mock paksa | — |
 
 ```bash
 AI_DOCKERFILE=Dockerfile.ml AI_ENGINE=qwen2vl docker compose up -d ai
 ```
 
-Default sengaja `mock`: klien Laravel dan sebagian besar pekerjaan kontrak tidak perlu menunggu
-inference CPU, dan mock menjawab dalam milidetik. Yang berubah saat engine asli aktif hanyalah
-`meta.engine` — bentuk response-nya tetap.
+Perhatikan bedanya: Modul 1 default-nya `mock` karena inference-nya mahal, sedangkan Modul 2
+default-nya `auto` karena YOLO menjawab dalam milidetik — tidak ada alasan menahannya kalau
+memang tersedia.
 
-Field `scenario` hanya berlaku untuk mock dan diabaikan oleh engine asli.
+Yang berubah saat engine asli aktif hanyalah `meta.engine`; bentuk response-nya tetap. Field
+`scenario` hanya berlaku untuk mock dan diabaikan oleh engine asli.
 
 ## Bobot model
 
-Sekitar 4,4 GB, disimpan di volume `ai-hf-cache` supaya tidak diunduh ulang setiap
-`docker compose up`. Unduhan pertama memakan beberapa menit; sesudah cache hangat, memuat model
-hanya ~4 detik.
+**Qwen2-VL (Modul 1)** — sekitar 4,4 GB, disimpan di volume `ai-hf-cache` supaya tidak diunduh
+ulang setiap `docker compose up`. Unduhan pertama memakan beberapa menit; sesudah cache hangat,
+memuat model hanya ~4 detik.
 
 Container tetap mencoba menghubungi `huggingface.co` setiap kali memuat model, dan gagal DNS di
 sana menambah jeda percuma padahal bobotnya sudah ada. Setelah unduhan pertama selesai,
 `HF_HUB_OFFLINE=1` menghilangkan perjalanan jaringan itu.
 
+**YOLO (Modul 2)** — 6 MB di `models/inspection.pt`, **ikut di-commit ke repo** dan disalin ke
+dalam image. Cukup kecil untuk itu, dan efeknya repo jadi mandiri: tidak perlu API key Roboflow
+maupun langkah unduh terpisah. Jalur `models/` selebihnya tetap di-gitignore.
+
 ## Angka terukur
 
-Qwen2-VL-2B, CPU, 4 thread. Tiga dokumen bertabel 10 baris; angka kedua adalah baris dengan
-nama **dan** jumlah yang benar dari 10.
+Modul 1, Qwen2-VL-2B, CPU, 4 thread. Tiga dokumen bertabel 10 baris; angka kedua adalah baris
+dengan nama **dan** jumlah yang benar dari 10.
 
 ```
                    ~1260 token      ~494 token
@@ -92,7 +120,13 @@ pada dua dokumen lain selisihnya di bawah satu detik. Sebabnya, yang memakan wak
 menuliskan JSON baris demi baris, bukan melihat gambarnya. Karena itu `qwen_max_pixels`
 dibiarkan tinggi — menurunkannya menukar akurasi dengan kecepatan yang sering tidak datang.
 
+Modul 2 belum diukur setara, tetapi ordenya berbeda jauh: YOLO nano pada satu foto 640 px
+selesai dalam hitungan milidetik, bukan menit. Latensi yang dirasakan pengguna sepenuhnya
+ditentukan Modul 1.
+
 ## Batasan yang diketahui
+
+**Modul 1**
 
 - **Dokumen banyak halaman belum realistis lewat request sinkron.** Satu halaman padat ~200
   detik, sedangkan `qwen_max_model_pages` bernilai 10 — artinya satu dokumen bisa menahan
@@ -104,3 +138,16 @@ dibiarkan tinggi — menurunkannya menukar akurasi dengan kecepatan yang sering 
 - **`engines/qwen.py` belum punya test otomatis.** Logika rapuhnya (ekstraksi JSON, normalisasi
   satuan, perhitungan confidence) sudah diuji lewat `extraction.py` dan `units.py` tanpa torch,
   tetapi orkestrasi per halaman di engine hanya teruji secara manual.
+
+**Modul 2**
+
+- **Modelnya satu kelas (`cardboard`).** Ia menghitung kemasan, tetapi tidak bisa membedakan
+  produk apa isinya. Akibatnya cross-check hanya dapat membandingkan **jumlah total**, bukan
+  memvonis per baris barang — dan parameter "identitas produk" di dokumen konsep belum
+  terjawab.
+- **Deteksi kerusakan belum ada.** Tidak ada kelas cacat di model, jadi `defect.status` selalu
+  `unavailable`. Schema-nya menolak `findings` yang terisi saat status itu, supaya tidak ada
+  yang mengarang temuan sebelum modelnya ada.
+- **Belum diuji dengan bobot asli di dalam container.** Test yang hijau mencakup schema, engine
+  mock, dan endpoint; jalur `engines/yolo.py` butuh `Dockerfile.ml` dan baru diverifikasi
+  manual.
