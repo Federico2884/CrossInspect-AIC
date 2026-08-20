@@ -67,6 +67,15 @@ Aturan:
 - Sertakan SEMUA baris barang yang terlihat di halaman ini.
 - Bila sebuah field tidak ada di halaman ini, isi null.
 - Bila halaman ini tidak memuat tabel barang, kembalikan "items": [].
+
+Membedakan kolom nama dan kolom kode — dua kolom ini sering tertukar:
+- Kolom NAMA berjudul "Nama Barang", "Deskripsi Barang", "Uraian Barang", atau
+  "Nama Produk". Isinya kalimat, mis. "Teh Botol Sosro 250ml". Ini untuk "item_name".
+- Kolom KODE berjudul "Kode", "Kode Barang", "SKU", atau "Part No.". Isinya kode
+  pendek berhuruf besar dan berangka, mis. "SSR-526". Ini untuk "sku".
+- JANGAN menaruh kode seperti "SSR-526" di "item_name". Bila sebuah baris hanya
+  punya kode dan namanya tidak terbaca, isi "item_name" dengan teks yang tercetak
+  di kolom nama, bukan dengan kodenya.
 """
 
 
