@@ -210,6 +210,11 @@ def main(argv: list[str] | None = None) -> int:
                 response = engine.parse(payload)
                 elapsed = time.perf_counter() - started
 
+                # Kandidat rumus confidence dititipkan lewat meta.debug (aktif
+                # bila AI_DEBUG=true) supaya bentuk response tetap sesuai
+                # kontrak. Tanpa AI_DEBUG, kolomnya kosong dan sisanya jalan.
+                debug = response.meta.debug or {}
+
                 score = score_document(
                     doc_id=entry["doc_id"],
                     source=source,
@@ -224,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
                     score_header=(source == "pdf" or page == 1),
                     score_page_count=(source == "pdf"),
                     threshold=args.threshold,
+                    confidences_min=debug.get("confidence_min"),
+                    confidences_quantity=debug.get("confidence_quantity"),
                 )
 
                 # Ditulis dan di-flush per panggilan: run berjam-jam yang

@@ -35,6 +35,28 @@ def pct(value: float | None) -> str:
     return "—" if value is None else f"{value * 100:.1f}%"
 
 
+VARIANT_LABELS = {
+    "mean": "Rata-rata atas nama (dipakai kontrak)",
+    "min": "Token terlemah pada nama",
+    "quantity": "Rata-rata atas jumlah",
+}
+
+
+def _variant_rows(bucket: Aggregate) -> list[str]:
+    lines: list[str] = []
+    for variant, label in VARIANT_LABELS.items():
+        right, wrong, n_right, n_wrong = bucket.split_for(variant)
+        if right is None or wrong is None:
+            lines.append(f"| {label} | — | — | — | {n_right} | {n_wrong} |")
+            continue
+        gap = right - wrong
+        lines.append(
+            f"| {label} | {pct(right)} | {pct(wrong)} | {gap * 100:+.1f} poin | "
+            f"{n_right} | {n_wrong} |"
+        )
+    return lines
+
+
 def _rows_table(buckets: Sequence[Aggregate]) -> list[str]:
     lines = [
         "| Kelompok | Dokumen | JSON terbaca | Recall baris | Presisi baris | "
@@ -138,8 +160,16 @@ def render(scores: Sequence[DocumentScore], engine: str, threshold: float) -> st
         "",
         "## Apakah confidence bisa dipercaya?",
         "",
-        f"Rata-rata confidence baris **benar**: {pct(correct_conf)} (n={n_correct}) · "
-        f"baris **salah**: {pct(wrong_conf)} (n={n_wrong})",
+        "Confidence hanya berguna kalau angkanya berbeda antara baris benar dan baris salah.",
+        "Kolom *Selisih* itulah ukurannya; mendekati nol berarti angkanya tidak memberi tahu",
+        "apa-apa. Tiga kandidat rumus diukur berdampingan dari run yang sama.",
+        "",
+        "| Rumus | Baris benar | Baris salah | Selisih | n benar | n salah |",
+        "|---|---:|---:|---:|---:|---:|",
+        *_variant_rows(overall),
+        "",
+        f"Yang dipakai kontrak saat ini adalah **rata-rata atas nama barang**: "
+        f"benar {pct(correct_conf)} vs salah {pct(wrong_conf)}.",
         "",
     ]
 
