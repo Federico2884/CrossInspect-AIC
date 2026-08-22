@@ -1,189 +1,131 @@
-# Kontrak API Document Parsing
+# Kontrak Service CrossInspect AI
 
-Kontrak resmi untuk **Modul 1 (Document Parsing)** CrossInspect AI.
-Ditegakkan oleh model Pydantic di [`app/modules/document/schemas.py`](app/modules/document/schemas.py);
-kalau dokumen ini dan model tersebut sampai berbeda, modelnya yang benar dan dokumen ini yang salah.
+Aturan yang berlaku di **semua** modul: bentuk error, batas unggahan, arti `meta`, dan
+pembedaan warning dari error. Yang khas per modul — bentuk response, kode warning, skenario —
+ada di kontrak modulnya sendiri.
 
-Pembaca: siapa pun yang menulis klien Laravel. Kontrak ini sudah bisa dipakai hari ini —
-endpoint-nya sudah hidup dan dilayani mock yang deterministik.
+Ditulis untuk siapa pun yang menulis klien Laravel atau cross-check engine.
+
+## Kontrak per modul
+
+| Modul | Endpoint | Kontrak |
+|---|---|---|
+| Modul 1 — Document Parsing | `POST /document/parse` | [`app/modules/document/CONTRACT.md`](app/modules/document/CONTRACT.md) |
+| Modul 2 — Physical Inspection | `POST /vision/inspect` | [`app/modules/vision/CONTRACT.md`](app/modules/vision/CONTRACT.md) |
+| Modul 3 — Cross-Check Engine | `POST /crosscheck` | [`app/modules/crosscheck/CONTRACT.md`](app/modules/crosscheck/CONTRACT.md) |
+
+Modul 3 adalah pengecualian dari beberapa aturan di bawah: ia menerima **JSON**, bukan unggahan
+berkas, sehingga batas 20 MB dan aturan magic bytes tidak berlaku baginya.
+
+Tiap kontrak modul ditegakkan oleh `schemas.py` di folder yang sama. Kalau kontrak dan model
+Pydantic-nya berbeda, **modelnya yang benar** dan dokumennya yang salah.
+
+Cara menjalankan service, memilih engine, dan angka latensi terukur ada di
+[`README.md`](README.md) — bukan di sini.
 
 ---
 
-## Endpoint
+## Unggahan
 
-```
-POST http://ai:8000/document/parse
-Content-Type: multipart/form-data
-```
+Semua endpoint menerima `multipart/form-data` dengan field `file`, maksimal **20 MB**.
 
-Dari host (untuk debugging): `http://localhost:8001/document/parse`.
-Skema interaktif: `http://localhost:8001/docs`.
+Format dideteksi dari **magic bytes**, bukan dari nama berkas atau `Content-Type` yang dikirim
+klien. Keduanya gampang dipalsukan dan sering salah dari browser, jadi berkas `.txt` yang
+diganti namanya jadi `.pdf` akan ditolak. Format apa saja yang diterima berbeda per modul —
+lihat kontrak masing-masing.
 
-| Field | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| `file` | file | ya | PDF, PNG, atau JPEG. Maksimal **20 MB**. |
-| `scenario` | string | tidak | **Khusus mock.** Memaksa fixture tertentu — lihat [Skenario](#skenario). Diabaikan begitu engine asli masuk. |
-
-Format dideteksi dari **magic bytes**, bukan dari nama file atau `Content-Type` yang
-dikirim. File `.txt` yang diganti namanya jadi `.pdf` akan ditolak.
-
----
-
-## Respons — 200
-
-```json
-{
-  "document_type": "SURAT_JALAN",
-  "document_number": "SJ/2026/08/00161",
-  "document_date": "2026-08-15",
-  "sender": "PT Cahaya Abadi",
-  "recipient": "Toko Sumber Rejeki",
-  "page_count": 1,
-  "items": [
-    {
-      "item_name": "Susu UHT Ultra 250ml",
-      "sku": "ULT-250",
-      "quantity": 10,
-      "unit_raw": "Karton",
-      "unit_normalized": "karton",
-      "quantity_per_unit": 12,
-      "total_pieces": 120,
-      "source_page": 1
-    }
-  ],
-  "confidence": { "document_number": 0.93, "items": [0.95], "overall": 0.86 },
-  "warnings": [
-    { "code": "AMBIGUOUS_UNIT", "message": "…", "severity": "warning", "item_index": 2 }
-  ],
-  "meta": {
-    "engine": "mock",
-    "device": "cpu",
-    "processing_ms": 3,
-    "scenario": "mixed_units",
-    "debug": null
-  }
-}
-```
-
-### Field
-
-| Field | Tipe | Keterangan |
-|---|---|---|
-| `document_type` | `SURAT_JALAN` \| `INVOICE` \| `UNKNOWN` | `UNKNOWN` tetap mengembalikan 200 — periksa `warnings`. |
-| `document_number` | string | String kosong kalau tidak terbaca, tidak pernah null. |
-| `document_date` | string \| null | ISO `YYYY-MM-DD`. Null kalau tidak ada di dokumen. |
-| `sender` / `recipient` | string \| null | |
-| `page_count` | int ≥ 1 | Halaman yang benar-benar diproses (dibatasi 10). |
-| `items[]` | array | Boleh kosong. |
-| `confidence` | object | `document_number`, `items[]` (sejajar dengan `items`), `overall`. Semuanya 0.0–1.0. |
-| `warnings[]` | array | Masalah kualitas parse. **Bukan** error. |
-| `meta` | object | `engine`, `device` (selalu `"cpu"`), `processing_ms`, `scenario`, `debug`. |
-
-### Field item
-
-| Field | Tipe | Keterangan |
-|---|---|---|
-| `item_name` | string | |
-| `sku` | string \| null | |
-| `quantity` | int ≥ 0 | **Dalam satuan `unit_raw`, bukan dalam pieces.** |
-| `unit_raw` | string | Apa adanya dari dokumen: `Koli`, `Dus`, `Ball`, `Zak`… |
-| `unit_normalized` | enum | `pcs` \| `box` \| `karton` \| `koli` \| `kg` \| `lusin` \| `roll` \| `sak` \| `unknown` |
-| `quantity_per_unit` | int \| null | Isi per satuan, misalnya `12` pada "10 karton @ 12 pcs". |
-| `total_pieces` | int \| null | `quantity × quantity_per_unit`, kalau bisa diturunkan. |
-| `source_page` | int ≥ 1 | Tidak pernah melebihi `page_count`. |
-
-> **Catatan cross-check.** Modul 2 menghitung karton fisik. Untuk `10 karton @ 12 pcs`,
-> bandingkan dengan **`quantity` (10)** — bukan `total_pieces` (120). Pemisahan ini ada
-> justru supaya kedua sisi tidak perlu menebak angka mana yang sedang dibaca.
-
-> **Catatan satuan.** `unit_normalized` adalah enum tertutup, jadi satuan yang tidak lazim
-> akan jatuh ke `unknown` — tetapi `unit_raw` selalu menyimpan apa yang tertulis di dokumen.
-> Surat Jalan asli memakai `koli`, `dus`, `zak`, `ball`, `slop`; jangan pernah menyandarkan
-> logika hanya pada enum ketika isinya `unknown`.
+Dari host, untuk debugging: `http://localhost:8001/…`. Skema interaktif: `http://localhost:8001/docs`.
 
 ---
 
 ## Warning vs error
 
-Dokumen yang **hasil parse-nya buruk** tetap mengembalikan **200 beserta `warnings[]`** —
-supaya UI bisa menampilkan ketidakpastian ("barang 3 tidak jelas, mohon dikonfirmasi")
-alih-alih diam-diam memercayai angka yang salah. Request yang **gagal** mengembalikan 4xx
-beserta envelope `error`.
+Pembedaan ini adalah inti kontrak, bukan detail gaya.
 
-| Code | Severity | Arti |
-|---|---|---|
-| `LOW_CONFIDENCE_ITEM` | warning | Barang terbaca dengan confidence rendah; `item_index` menunjuk ke barang tersebut. |
-| `MISSING_DOCUMENT_DATE` | warning | Tanggal tidak ditemukan; `document_date` bernilai null. |
-| `MISSING_FIELD` | info/warning | Ada field lain yang gagal diekstrak. |
-| `AMBIGUOUS_UNIT` | warning | `unit_raw` tidak terpetakan ke enum; `unit_normalized` menjadi `unknown`. |
-| `UNRECOGNISED_DOCUMENT_TYPE` | error | Bukan Surat Jalan maupun Invoice. |
-| `PAGE_LIMIT_TRUNCATED` | warning | Dokumen melebihi batas 10 halaman. |
-| `QUANTITY_MISMATCH` | warning | **Dicadangkan — belum dipancarkan engine mana pun.** Lihat catatan di bawah. |
+| Keadaan | Balasan |
+|---|---|
+| Berhasil diproses, tetapi hasilnya meragukan | **200** + `warnings[]` |
+| Request gagal | **4xx/5xx** + amplop `error` |
 
-Cocokkan berdasarkan `code`. Isi `message` ditujukan untuk dibaca manusia, berbahasa
+Hasil yang buruk tetap 200 supaya UI bisa menampilkan ketidakpastian — *"barang 3 tidak jelas,
+mohon dikonfirmasi"* — alih-alih diam-diam memercayai angka yang salah. Untuk aplikasi gudang
+perbedaan ini penting: salah hitung yang tidak disadari lebih berbahaya daripada kegagalan yang
+terlihat.
+
+Setiap warning punya `severity`:
+
+| `severity` | Arti |
+|---|---|
+| `info` | Catatan, tidak menuntut tindakan. |
+| `warning` | Hasilnya perlu dikonfirmasi manusia. |
+| `error` | Bagian penting gagal, walaupun HTTP-nya tetap 200. |
+
+Cocokkan selalu berdasarkan `code`. Isi `message` ditujukan untuk dibaca manusia, berbahasa
 Indonesia, dan kalimatnya bisa berubah sewaktu-waktu.
 
-> **Catatan `QUANTITY_MISMATCH`.** Kode ini sudah dipesan tempatnya, tetapi belum pernah
-> dikirim: untuk membandingkan total yang tertulis di dokumen dengan hasil hitungan, engine
-> harus lebih dulu mengekstrak total tercetak itu, dan sekarang belum. Jangan menulis
-> penanganan khusus untuknya — kode ini tidak akan muncul sampai fitur tersebut dikerjakan.
+---
 
-## Error
+## Amplop error
 
 ```json
 { "error": { "code": "FILE_TOO_LARGE", "message": "File exceeds the 20 MB limit.", "detail": "received 21000000 bytes" } }
 ```
 
+Amplop ini dipakai untuk **semua** kegagalan — bentuk bawaan FastAPI `{"detail": …}` tidak
+pernah bocor keluar. Klien cukup menulis satu penangan error, bukan menebak bentuk mana yang
+datang.
+
+Kode yang berlaku di semua modul:
+
 | HTTP | Code | Penyebab |
 |---|---|---|
 | 413 | `FILE_TOO_LARGE` | Lebih dari 20 MB. |
 | 422 | `EMPTY_FILE` | Nol byte. |
-| 422 | `UNSUPPORTED_FILE_TYPE` | Bukan PDF/PNG/JPEG menurut magic bytes. |
-| 422 | `UNKNOWN_SCENARIO` | `scenario` bukan salah satu dari tujuh yang tersedia. |
-| 422 | `INVALID_REQUEST` | Request tidak valid, misalnya field `file` tidak ada. |
-| 4xx/5xx | `HTTP_ERROR` | Kesalahan HTTP yang tidak ditangani khusus: URL salah ketik (404), method keliru (405), dan sejenisnya. |
+| 422 | `UNSUPPORTED_FILE_TYPE` | Format tidak didukung menurut magic bytes. Daftar format ada di kontrak modul. |
+| 422 | `UNKNOWN_SCENARIO` | `scenario` bukan salah satu yang tersedia di modul tersebut. |
+| 422 | `INVALID_REQUEST` | Request tidak valid, misalnya field `file` tidak dikirim. |
 
-Envelope `error` dipakai untuk **semua** kegagalan — bentuk bawaan FastAPI
-`{"detail": …}` tidak pernah bocor keluar.
+Modul boleh menambah kode miliknya sendiri; yang di atas dijamin ada di semua.
 
 ---
 
-## Skenario
+## `meta`
 
-Khusus mock. Kirim `scenario` untuk memaksa salah satu; kalau tidak dikirim, satu skenario
-dipilih secara deterministik dari hash isi file, sehingga unggahan yang sama selalu
-menghasilkan respons yang sama.
+Setiap response 200 membawa `meta`. Empat field ini ada di semua modul:
 
-| `scenario` | Yang diuji |
+| Field | Keterangan |
 |---|---|
-| `clean_surat_jalan` | Jalur normal, 3 barang, confidence tinggi |
-| `invoice` | Tipe `INVOICE` lengkap dengan SKU |
-| `multi_page` | 3 halaman, barang tersebar di beberapa `source_page` |
-| `mixed_units` | `karton`/`koli`/`Ball`/`kg`, aritmetika `quantity_per_unit`, `AMBIGUOUS_UNIT` |
-| `low_confidence` | Skor rendah per barang + `LOW_CONFIDENCE_ITEM` |
-| `missing_fields` | `document_date`/`sender` bernilai null + warning, tetap 200 |
-| `unknown_type` | `UNKNOWN`, tanpa barang, warning ber-severity `error` |
+| `engine` | Engine yang menjawab: `"mock"` atau id model. **Dari sinilah** klien tahu jawabannya asli atau fixture. |
+| `device` | Selalu `"cpu"`. |
+| `processing_ms` | Waktu proses di sisi service. |
+| `scenario` | Nama skenario bila mock yang menjawab, `null` bila engine asli. |
+| `debug` | Objek bebas atau `null`. Isinya **bukan** kontrak dan boleh berubah kapan saja. |
 
-Bangun klien Laravel dengan `mixed_units` dan `low_confidence` lebih dulu — jalur normal
-justru yang paling mudah; dua skenario itulah yang benar-benar menguji logika cross-check.
-
-```bash
-curl -F "file=@sample.pdf" -F "scenario=mixed_units" http://localhost:8001/document/parse
-```
+Modul menambahkan field `meta` miliknya sendiri di luar daftar ini.
 
 ---
 
-## Jaminan stabilitas
+## Skenario (khusus mock)
 
-Step 4–5 mengganti mock dengan Qwen2-VL di balik antarmuka yang sama
-([`engines/base.py`](app/modules/document/engines/base.py)). Saat itu terjadi:
+Selama sebuah modul dilayani engine mock, field opsional `scenario` memaksa fixture tertentu.
+Bila tidak dikirim, satu skenario dipilih **deterministik dari hash isi berkas** — unggahan yang
+sama selalu menghasilkan respons yang sama, sehingga klien Laravel punya data stabil untuk
+dikembangkan.
 
-- Bentuk respons **tidak berubah**. Field, tipe, dan enum-nya sama persis.
-- `meta.engine` berubah dari `"mock"` menjadi id model — dari situlah kamu tahu engine mana
-  yang menjawab.
-- `meta.scenario` menjadi `null`; field `scenario` diabaikan.
-- `meta.device` tetap `"cpu"`. Layanan ini CPU-only secara desain — tidak ada jalur kode GPU,
-  dan image ML memastikannya saat build.
+Field ini diabaikan begitu engine asli aktif, dan `meta.scenario` menjadi `null`. Daftar
+skenario yang tersedia berbeda per modul.
 
-Selebihnya — kode warning, kode error, dan pemisahan `quantity` / `total_pieces` — adalah
-kontrak, bukan detail implementasi.
+---
+
+## CPU-only
+
+Tidak ada jalur kode GPU di mana pun, dan `Dockerfile.ml` memastikannya saat build lewat
+assertion pada `torch`. `meta.device` karenanya selalu `"cpu"` — itu jaminan, bukan kebetulan
+konfigurasi.
+
+---
+
+## Yang dijamin stabil
+
+Kode error, kode warning, `severity`, dan bentuk amplop error adalah **kontrak**. Menukar engine
+mock dengan model asli tidak mengubah satu pun di antaranya; yang berubah hanya `meta.engine`.

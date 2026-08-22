@@ -12,7 +12,7 @@ use Illuminate\View\View;
  *
  * Halaman ini sengaja tipis: bentuk JSON dari service AI langsung diteruskan
  * ke view. Memetakannya ke objek PHP hanya akan menciptakan tempat kedua yang
- * bisa menyimpang dari CONTRACT.md.
+ * bisa menyimpang dari ai/app/modules/document/CONTRACT.md.
  */
 class DocumentParseController extends Controller
 {
@@ -65,7 +65,7 @@ class DocumentParseController extends Controller
         }
 
         // Parse yang buruk tetap 200 + warnings[]; hanya request yang gagal
-        // yang memakai envelope {"error": {...}}. Lihat CONTRACT.md.
+        // yang memakai envelope {"error": {...}}. Lihat ai/CONTRACT.md.
         if ($response->failed()) {
             return view('documents.result', [
                 'failure' => $response->json('error.message', 'Service AI menolak berkas ini.'),

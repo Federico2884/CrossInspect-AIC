@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir -r requirements-ml.txt \
     && python -c "import torch; assert not torch.cuda.is_available(); assert '+cpu' in torch.__version__, torch.__version__"
 
 COPY app ./app
+# Bobot YOLO Modul 2 — di image inilah deteksi asli benar-benar berjalan.
+COPY models ./models
 
 RUN useradd --create-home --uid 1000 aiuser \
     && mkdir -p "$HF_HOME" \
