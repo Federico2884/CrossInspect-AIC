@@ -22,6 +22,7 @@ from app.modules.document.extraction import (
     extract_page,
     parse_indonesian_date,
     span_confidence,
+    span_confidence_min,
 )
 from app.modules.document.schemas import DocumentType, UnitNormalized
 
@@ -281,6 +282,63 @@ def test_truncation_is_reported_with_the_real_total():
     truncation = [w for w in response.warnings if w.code == "PAGE_LIMIT_TRUNCATED"]
     assert len(truncation) == 1
     assert "14" in truncation[0].message
+
+
+def test_low_confidence_threshold_comes_from_settings(monkeypatch):
+    """Ambang 0.55 yang lama tidak pernah sekali pun menyala.
+
+    Dari 165 baris terukur, skor terendah 0.842 — jadi LOW_CONFIDENCE_ITEM
+    dijanjikan kontrak, digambar UI, dan dibaca Modul 3, tetapi mustahil
+    muncul. Ambangnya kini dari config supaya bisa dikalibrasi ulang.
+    """
+    from app.core.config import get_settings
+    from app.modules.document.extraction import low_confidence_threshold
+
+    monkeypatch.setenv("AI_LOW_CONFIDENCE_THRESHOLD", "0.90")
+    get_settings.cache_clear()
+    assert low_confidence_threshold() == pytest.approx(0.90)
+    get_settings.cache_clear()
+
+
+def test_low_confidence_warning_follows_the_configured_threshold(monkeypatch):
+    from app.core.config import get_settings
+
+    # Satu token yang membentang seluruh teks: offset-nya harus sejajar dengan
+    # raw_text, bukan dengan nama barangnya saja.
+    raw = json.dumps(PAYLOAD)
+    page = extract_page(raw, source_page=1, spans=build_token_spans([raw], [0.93]))
+
+    monkeypatch.setenv("AI_LOW_CONFIDENCE_THRESHOLD", "0.95")
+    get_settings.cache_clear()
+    flagged = assemble_response(
+        [page], page_count=1, truncated=False, total_pages=1, engine_name="x"
+    )
+
+    monkeypatch.setenv("AI_LOW_CONFIDENCE_THRESHOLD", "0.50")
+    get_settings.cache_clear()
+    quiet = assemble_response(
+        [page], page_count=1, truncated=False, total_pages=1, engine_name="x"
+    )
+    get_settings.cache_clear()
+
+    assert any(w.code == "LOW_CONFIDENCE_ITEM" for w in flagged.warnings)
+    assert not any(w.code == "LOW_CONFIDENCE_ITEM" for w in quiet.warnings)
+
+
+def test_min_confidence_exposes_a_weak_token_that_the_mean_hides():
+    """Inti kandidat alternatif: satu token ragu di antara token yakin."""
+    spans = build_token_spans(["Susu ", "UHT ", "250ml"], [0.99, 0.40, 0.99])
+
+    assert span_confidence(spans, 0, 14) == pytest.approx(0.793, abs=0.01)
+    assert span_confidence_min(spans, 0, 14) == pytest.approx(0.40)
+
+
+def test_extract_page_records_the_alternative_confidences():
+    spans = build_token_spans(["Susu UHT 250ml"], [0.9])
+    page = extract_page(json.dumps(PAYLOAD), source_page=1, spans=spans)
+
+    assert len(page.item_confidences_min) == len(page.items)
+    assert len(page.item_confidences_quantity) == len(page.items)
 
 
 def test_unusual_unit_raises_ambiguous_unit_warning():

@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from app.core.config import get_settings
 from app.modules.document import warnings as w
 from app.modules.document.schemas import (
     Confidence,
@@ -79,6 +80,12 @@ class ExtractedPage:
     items: list[Item] = field(default_factory=list)
     item_confidences: list[float] = field(default_factory=list)
     document_number_confidence: float = 0.0
+    # Kandidat pembanding, tidak masuk kontrak. Rata-rata atas nama barang
+    # (``item_confidences``) terbukti tidak memisahkan baris benar dari salah;
+    # kedua daftar ini dikumpulkan supaya evaluasi penuh bisa menilai apakah
+    # ada rumus lain yang lebih baik, tanpa perlu inference ulang lagi.
+    item_confidences_min: list[float] = field(default_factory=list)
+    item_confidences_quantity: list[float] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
@@ -116,6 +123,24 @@ def span_confidence(spans: Sequence[TokenSpan], start: int, end: int) -> float:
     return max(0.0, min(1.0, sum(hits) / len(hits)))
 
 
+def span_confidence_min(spans: Sequence[TokenSpan], start: int, end: int) -> float:
+    """Peluang token **terlemah** dalam rentang.
+
+    Alternatif dari rata-rata. Pada nama panjang, satu token ragu tenggelam
+    oleh belasan token yakin — padahal justru token ragu itu yang menandakan
+    barisnya perlu diperiksa. Dipakai sebagai kandidat pembanding; mana yang
+    benar-benar memisahkan baris benar dari salah baru bisa dinilai setelah
+    evaluasi penuh mengumpulkan cukup banyak baris salah.
+    """
+    if end <= start:
+        return 0.0
+
+    hits = [span.probability for span in spans if span.start < end and span.end > start]
+    if not hits:
+        return 0.0
+    return max(0.0, min(1.0, min(hits)))
+
+
 def confidence_for_value(text: str, spans: Sequence[TokenSpan], value: str | None) -> float:
     """Cari nilai di teks lalu hitung confidence token yang menuliskannya."""
     if not value:
@@ -124,6 +149,16 @@ def confidence_for_value(text: str, spans: Sequence[TokenSpan], value: str | Non
     if index < 0:
         return 0.0
     return span_confidence(spans, index, index + len(str(value)))
+
+
+def confidence_for_value_min(text: str, spans: Sequence[TokenSpan], value: str | None) -> float:
+    """Seperti ``confidence_for_value``, tetapi memakai token terlemah."""
+    if not value:
+        return 0.0
+    index = text.find(str(value))
+    if index < 0:
+        return 0.0
+    return span_confidence_min(spans, index, index + len(str(value)))
 
 
 # --------------------------------------------------------------------------
@@ -334,12 +369,19 @@ def extract_page(
 
     items: list[Item] = []
     confidences: list[float] = []
+    confidences_min: list[float] = []
+    confidences_qty: list[float] = []
     for row in rows:
         item = build_item(row, source_page)
         if item is None:
             continue
         items.append(item)
         confidences.append(confidence_for_value(raw_text, spans, item.item_name))
+        confidences_min.append(confidence_for_value_min(raw_text, spans, item.item_name))
+        # Rentang jumlah, bukan nama: "benar" pada evaluasi berarti nama DAN
+        # jumlah benar, sedangkan confidence selama ini hanya melihat nama —
+        # field yang bukan penentu kebenarannya.
+        confidences_qty.append(confidence_for_value(raw_text, spans, str(item.quantity)))
 
     number = _clean_str(payload.get("document_number") or payload.get("nomor_dokumen"))
 
@@ -355,6 +397,8 @@ def extract_page(
         recipient=_clean_str(payload.get("recipient") or payload.get("penerima")),
         items=items,
         item_confidences=confidences,
+        item_confidences_min=confidences_min,
+        item_confidences_quantity=confidences_qty,
         document_number_confidence=confidence_for_value(raw_text, spans, number),
     )
 
@@ -363,7 +407,14 @@ def extract_page(
 # Gabungan -> response
 # --------------------------------------------------------------------------
 
-LOW_CONFIDENCE_THRESHOLD = 0.55
+def low_confidence_threshold() -> float:
+    """Ambang LOW_CONFIDENCE_ITEM, bisa disetel lewat ``AI_LOW_CONFIDENCE_THRESHOLD``.
+
+    Dibaca saat dipakai, bukan sebagai konstanta modul, supaya nilainya bisa
+    dikalibrasi ulang dari environment setelah evaluasi penuh tanpa menyentuh
+    kode. Lihat catatan panjang di ``config.py`` soal kenapa 0.55 diganti.
+    """
+    return get_settings().low_confidence_threshold
 
 
 def assemble_response(
@@ -380,6 +431,7 @@ def assemble_response(
     halaman pertama, sedangkan barang tersebar.
     """
     warnings: list[ParseWarning] = []
+    threshold = low_confidence_threshold()
 
     items: list[Item] = []
     item_confidences: list[float] = []
@@ -419,7 +471,7 @@ def assemble_response(
         )
 
     for index, (item, score) in enumerate(zip(items, item_confidences, strict=False)):
-        if score < LOW_CONFIDENCE_THRESHOLD:
+        if score < threshold:
             warnings.append(
                 w.warning(
                     w.LOW_CONFIDENCE_ITEM,

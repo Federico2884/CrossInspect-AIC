@@ -236,6 +236,14 @@ class QwenEngine:
                 "raw_pages": [page.raw_text for page in pages],
                 "rendered_pages": rendered.page_count,
                 "total_pages": rendered.total_pages,
+                # Kandidat confidence selain rata-rata atas nama barang, sejajar
+                # dengan items[]. Dikumpulkan supaya evaluasi penuh bisa menilai
+                # rumus mana yang benar-benar memisahkan baris benar dari salah
+                # tanpa perlu mengulang inference berjam-jam.
+                "confidence_min": [c for page in pages for c in page.item_confidences_min],
+                "confidence_quantity": [
+                    c for page in pages for c in page.item_confidences_quantity
+                ],
             }
 
         return response
