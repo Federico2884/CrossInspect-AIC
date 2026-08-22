@@ -2,17 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ParseDocument;
+use App\Models\Document;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
 /**
- * Antarmuka uji untuk Modul 1 (Document Parsing).
+ * Antarmuka Modul 1 (Document Parsing).
  *
- * Halaman ini sengaja tipis: bentuk JSON dari service AI langsung diteruskan
- * ke view. Memetakannya ke objek PHP hanya akan menciptakan tempat kedua yang
- * bisa menyimpang dari ai/app/modules/document/CONTRACT.md.
+ * Unggahan tidak dibaca di dalam request: berkas disimpan, satu baris dicatat,
+ * pekerjaannya diantrekan, lalu halaman hasil menanyakan statusnya berkala.
+ * Dengan engine asli satu halaman padat memakan menit, jadi request sinkron
+ * berarti browser menggantung.
  */
 class DocumentParseController extends Controller
 {
@@ -36,48 +39,53 @@ class DocumentParseController extends Controller
         return view('documents.create', ['scenarios' => self::SCENARIOS]);
     }
 
-    public function parse(Request $request): View
+    public function parse(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             // Batas 20 MB disamakan dengan service AI supaya penolakan terjadi
-            // di sini, bukan setelah file terlanjur dikirim lewat jaringan.
+            // di sini, bukan setelah berkas terlanjur dikirim lewat jaringan.
             'file' => ['required', 'file', 'mimes:pdf,png,jpg,jpeg', 'max:20480'],
-            'scenario' => ['nullable', 'string', 'in:' . implode(',', self::SCENARIOS)],
+            'scenario' => ['nullable', 'string', 'in:'.implode(',', self::SCENARIOS)],
         ]);
 
-        $file = $validated['file'];
-        $scenario = $validated['scenario'] ?? null;
+        // Disimpan ke disk, bukan disimpan di memori: worker membacanya setelah
+        // request ini sudah lama selesai.
+        $path = $validated['file']->store('documents', 'local');
 
-        $pending = Http::timeout((int) config('services.ai.timeout'))
-            ->attach('file', file_get_contents($file->getRealPath()), $file->getClientOriginalName());
+        $document = Document::create([
+            'original_filename' => $validated['file']->getClientOriginalName(),
+            'stored_path' => $path,
+            'scenario' => $validated['scenario'] ?? null,
+            'status' => Document::STATUS_QUEUED,
+        ]);
 
-        try {
-            $response = $pending->post(
-                rtrim((string) config('services.ai.url'), '/') . '/document/parse',
-                $scenario ? ['scenario' => $scenario] : []
-            );
-        } catch (ConnectionException $e) {
-            return view('documents.result', [
-                'failure' => 'Tidak bisa menghubungi service AI. Pastikan container `ai` hidup. '
-                    . 'Saat memakai engine Qwen2-VL, permintaan pertama juga menunggu model dimuat.',
-                'detail' => $e->getMessage(),
-            ]);
-        }
+        ParseDocument::dispatch($document);
 
-        // Parse yang buruk tetap 200 + warnings[]; hanya request yang gagal
-        // yang memakai envelope {"error": {...}}. Lihat ai/CONTRACT.md.
-        if ($response->failed()) {
-            return view('documents.result', [
-                'failure' => $response->json('error.message', 'Service AI menolak berkas ini.'),
-                'detail' => $response->json('error.detail'),
-                'code' => $response->json('error.code'),
-                'status' => $response->status(),
-            ]);
-        }
+        return redirect()->route('documents.show', $document);
+    }
 
-        return view('documents.result', [
-            'result' => $response->json(),
-            'filename' => $file->getClientOriginalName(),
+    public function show(Document $document): View
+    {
+        return view('documents.show', ['document' => $document]);
+    }
+
+    /**
+     * Dipanggil berkala oleh halaman tunggu. Sengaja ringan.
+     */
+    public function status(Document $document): JsonResponse
+    {
+        return response()->json([
+            'status' => $document->status,
+            'pending' => $document->isPending(),
+            'elapsed' => $document->elapsedSeconds(),
+            'items' => $document->itemCount(),
+        ]);
+    }
+
+    public function index(): View
+    {
+        return view('documents.index', [
+            'documents' => Document::latest()->paginate(20),
         ]);
     }
 }
