@@ -78,13 +78,15 @@ class ExtractedPage:
     sender: str | None = None
     recipient: str | None = None
     items: list[Item] = field(default_factory=list)
+    # Skor yang masuk kontrak: peluang token TERLEMAH pada rentang nama barang.
+    # Dipilih lewat pengukuran, bukan selera — pada 845 baris, rata-rata hanya
+    # memisahkan baris benar dari salah sejauh 4,4 poin, sedangkan token
+    # terlemah memisahkan 18,2 poin.
     item_confidences: list[float] = field(default_factory=list)
     document_number_confidence: float = 0.0
-    # Kandidat pembanding, tidak masuk kontrak. Rata-rata atas nama barang
-    # (``item_confidences``) terbukti tidak memisahkan baris benar dari salah;
-    # kedua daftar ini dikumpulkan supaya evaluasi penuh bisa menilai apakah
-    # ada rumus lain yang lebih baik, tanpa perlu inference ulang lagi.
-    item_confidences_min: list[float] = field(default_factory=list)
+    # Kandidat pembanding, tidak masuk kontrak. Tetap dikumpulkan supaya
+    # evaluasi berikutnya bisa menilai ulang ketiganya tanpa inference ulang.
+    item_confidences_mean: list[float] = field(default_factory=list)
     item_confidences_quantity: list[float] = field(default_factory=list)
 
 
@@ -369,18 +371,21 @@ def extract_page(
 
     items: list[Item] = []
     confidences: list[float] = []
-    confidences_min: list[float] = []
+    confidences_mean: list[float] = []
     confidences_qty: list[float] = []
     for row in rows:
         item = build_item(row, source_page)
         if item is None:
             continue
         items.append(item)
-        confidences.append(confidence_for_value(raw_text, spans, item.item_name))
-        confidences_min.append(confidence_for_value_min(raw_text, spans, item.item_name))
-        # Rentang jumlah, bukan nama: "benar" pada evaluasi berarti nama DAN
-        # jumlah benar, sedangkan confidence selama ini hanya melihat nama —
-        # field yang bukan penentu kebenarannya.
+        # Token terlemah, bukan rata-rata: satu token ragu di tengah nama
+        # panjang tenggelam bila dirata-rata, padahal justru token itulah
+        # tanda barisnya perlu diperiksa.
+        confidences.append(confidence_for_value_min(raw_text, spans, item.item_name))
+        confidences_mean.append(confidence_for_value(raw_text, spans, item.item_name))
+        # Rentang jumlah. Diduga paling relevan karena "benar" pada evaluasi
+        # berarti nama DAN jumlah benar — ternyata justru pemisah terburuk
+        # (2,3 poin). Disimpan sebagai pembanding.
         confidences_qty.append(confidence_for_value(raw_text, spans, str(item.quantity)))
 
     number = _clean_str(payload.get("document_number") or payload.get("nomor_dokumen"))
@@ -397,9 +402,13 @@ def extract_page(
         recipient=_clean_str(payload.get("recipient") or payload.get("penerima")),
         items=items,
         item_confidences=confidences,
-        item_confidences_min=confidences_min,
+        item_confidences_mean=confidences_mean,
         item_confidences_quantity=confidences_qty,
-        document_number_confidence=confidence_for_value(raw_text, spans, number),
+        # Definisi yang sama dipakai lintas field supaya satu angka berarti
+        # satu hal. Kalibrasi khusus nomor dokumen BELUM pernah diukur —
+        # evaluasi hanya menilai baris barang — jadi ini konsistensi, bukan
+        # bukti.
+        document_number_confidence=confidence_for_value_min(raw_text, spans, number),
     )
 
 

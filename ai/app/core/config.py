@@ -64,18 +64,21 @@ class Settings(BaseSettings):
     # supaya biaya inference bisa dibatasi tanpa mengubah batas render.
     qwen_max_model_pages: int = 10
 
-    # Ambang LOW_CONFIDENCE_ITEM. Sebelumnya 0.55 dan tidak pernah sekali pun
-    # menyala: dari 165 baris terukur, skor terendah 0.842 dan 144 di antaranya
-    # membulat ke 1.0 — model percaya diri bahkan saat salah. Warning yang tidak
-    # bisa menyala lebih buruk daripada tidak ada, karena tetap dijanjikan
-    # kontrak dan tetap digambar UI.
+    # Ambang LOW_CONFIDENCE_ITEM, dikalibrasi pada 845 baris terjodoh (98 di
+    # antaranya salah) dari evaluasi 65 dokumen. Titik kerja yang terukur:
     #
-    # 0.95 menandai sekitar 13% baris paling ragu. Itu alat bantu tinjau, BUKAN
-    # detektor kesalahan: pada sampel yang sama ia menangkap 4 dari 10 baris
-    # salah dan ikut menandai 17 baris yang sebenarnya benar. Angkanya juga
-    # diturunkan dari 10 baris salah saja — terlalu sedikit untuk dipercaya, dan
-    # ditinjau ulang setelah evaluasi penuh 200 dokumen.
-    low_confidence_threshold: float = 0.95
+    #   ambang | ditandai | salah tertangkap | presisi
+    #   0.50   |  52 (6%) |  28/98 (29%)     |  54%
+    #   0.70   | 168 (20%)|  50/98 (51%)     |  30%
+    #   0.90   | 374 (44%)|  68/98 (69%)     |  18%
+    #
+    # 0.50 dipilih karena lebih dari separuh baris yang ditandai memang salah.
+    # Peringatan yang lebih sering benar daripada meleset akan dipercaya; yang
+    # menandai separuh tabel akan diabaikan.
+    #
+    # Tetap perlu dibaca sebagai alat bantu tinjau, BUKAN detektor kesalahan:
+    # 71% baris salah lolos tanpa ditandai.
+    low_confidence_threshold: float = 0.50
 
     # Jumlah thread BLAS/OMP. Di-set juga sebagai ENV di Dockerfile supaya
     # library yang membaca env saat import sudah melihat nilai yang benar.

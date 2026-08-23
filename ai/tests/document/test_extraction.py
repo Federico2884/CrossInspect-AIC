@@ -337,8 +337,32 @@ def test_extract_page_records_the_alternative_confidences():
     spans = build_token_spans(["Susu UHT 250ml"], [0.9])
     page = extract_page(json.dumps(PAYLOAD), source_page=1, spans=spans)
 
-    assert len(page.item_confidences_min) == len(page.items)
+    assert len(page.item_confidences_mean) == len(page.items)
     assert len(page.item_confidences_quantity) == len(page.items)
+
+
+def test_contract_confidence_uses_the_weakest_token_not_the_average():
+    """Rumus yang dipakai kontrak dipilih lewat pengukuran.
+
+    Pada 845 baris, rata-rata hanya memisahkan baris benar dari salah sejauh
+    4,4 poin; token terlemah memisahkan 18,2 poin. Test ini mengunci pilihan
+    itu supaya tidak diam-diam berbalik.
+    """
+    raw = json.dumps(PAYLOAD)
+    name = "Susu UHT 250ml"
+    start = raw.index(name)
+
+    # Satu token ragu di tengah nama, dikelilingi token yakin.
+    spans = [
+        TokenSpan(0, start, 0.99),
+        TokenSpan(start, start + 4, 0.99),
+        TokenSpan(start + 4, start + 9, 0.30),
+        TokenSpan(start + 9, len(raw), 0.99),
+    ]
+    page = extract_page(raw, source_page=1, spans=spans)
+
+    assert page.item_confidences[0] == pytest.approx(0.30)  # token terlemah
+    assert page.item_confidences_mean[0] > 0.70  # rata-rata menyembunyikannya
 
 
 def test_unusual_unit_raises_ambiguous_unit_warning():

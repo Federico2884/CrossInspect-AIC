@@ -36,8 +36,8 @@ def pct(value: float | None) -> str:
 
 
 VARIANT_LABELS = {
-    "mean": "Rata-rata atas nama (dipakai kontrak)",
-    "min": "Token terlemah pada nama",
+    "min": "Token terlemah pada nama (dipakai kontrak)",
+    "mean": "Rata-rata atas nama",
     "quantity": "Rata-rata atas jumlah",
 }
 
@@ -168,7 +168,7 @@ def render(scores: Sequence[DocumentScore], engine: str, threshold: float) -> st
         "|---|---:|---:|---:|---:|---:|",
         *_variant_rows(overall),
         "",
-        f"Yang dipakai kontrak saat ini adalah **rata-rata atas nama barang**: "
+        f"Yang dipakai kontrak saat ini adalah **token terlemah pada nama barang**: "
         f"benar {pct(correct_conf)} vs salah {pct(wrong_conf)}.",
         "",
     ]

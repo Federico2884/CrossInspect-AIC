@@ -240,7 +240,7 @@ class QwenEngine:
                 # dengan items[]. Dikumpulkan supaya evaluasi penuh bisa menilai
                 # rumus mana yang benar-benar memisahkan baris benar dari salah
                 # tanpa perlu mengulang inference berjam-jam.
-                "confidence_min": [c for page in pages for c in page.item_confidences_min],
+                "confidence_mean": [c for page in pages for c in page.item_confidences_mean],
                 "confidence_quantity": [
                     c for page in pages for c in page.item_confidences_quantity
                 ],

@@ -229,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                     score_header=(source == "pdf" or page == 1),
                     score_page_count=(source == "pdf"),
                     threshold=args.threshold,
-                    confidences_min=debug.get("confidence_min"),
+                    confidences_mean=debug.get("confidence_mean"),
                     confidences_quantity=debug.get("confidence_quantity"),
                 )
 

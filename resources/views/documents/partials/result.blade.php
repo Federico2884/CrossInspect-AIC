@@ -111,9 +111,10 @@
                                                 <span class="text-neutral-400">—</span>
                                             @else
                                                 {{-- Ambang engine untuk LOW_CONFIDENCE_ITEM; lihat AI_LOW_CONFIDENCE_THRESHOLD.
-                                                     Angka ini menandai baris paling ragu, BUKAN baris yang pasti salah:
-                                                     pada pengukuran terakhir model tetap yakin walau jawabannya keliru. --}}
-                                                <span class="{{ $score < 0.95 ? 'font-semibold text-amber-700' : 'text-neutral-600' }}">
+                                                     Terkalibrasi pada 845 baris: di bawah 0,50 sekitar separuh baris
+                                                     memang salah. Tetap alat bantu tinjau, bukan detektor kesalahan —
+                                                     sebagian besar baris salah lolos tanpa ditandai. --}}
+                                                <span class="{{ $score < 0.50 ? 'font-semibold text-amber-700' : 'text-neutral-600' }}">
                                                     {{ number_format($score * 100, 0) }}%
                                                 </span>
                                             @endif

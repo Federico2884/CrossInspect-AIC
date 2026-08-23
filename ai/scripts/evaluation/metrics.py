@@ -71,7 +71,7 @@ class DocumentScore:
     # Kandidat rumus lain, direkam berdampingan supaya ketiganya bisa
     # dibandingkan dari satu kali run. Rata-rata atas nama barang sudah terbukti
     # tidak memisahkan benar dari salah; dua ini belum diuji pada data cukup.
-    confidence_pairs_min: list[tuple[float, bool]] = field(default_factory=list)
+    confidence_pairs_mean: list[tuple[float, bool]] = field(default_factory=list)
     confidence_pairs_quantity: list[tuple[float, bool]] = field(default_factory=list)
     raw_text: str | None = None
 
@@ -102,7 +102,7 @@ def score_document(
     score_header: bool,
     score_page_count: bool = True,
     threshold: float = DEFAULT_THRESHOLD,
-    confidences_min: Sequence[float] | None = None,
+    confidences_mean: Sequence[float] | None = None,
     confidences_quantity: Sequence[float] | None = None,
     raw_text: str | None = None,
 ) -> DocumentScore:
@@ -168,7 +168,7 @@ def score_document(
         correct = match.exact and quantity_ok
         for source, sink in (
             (item_confidences, score.confidence_pairs),
-            (confidences_min or [], score.confidence_pairs_min),
+            (confidences_mean or [], score.confidence_pairs_mean),
             (confidences_quantity or [], score.confidence_pairs_quantity),
         ):
             if match.predicted_index < len(source):
@@ -203,7 +203,7 @@ class Aggregate:
 
     field_totals: dict[str, int] = field(default_factory=dict)
     confidence_pairs: list[tuple[float, bool]] = field(default_factory=list)
-    confidence_pairs_min: list[tuple[float, bool]] = field(default_factory=list)
+    confidence_pairs_mean: list[tuple[float, bool]] = field(default_factory=list)
     confidence_pairs_quantity: list[tuple[float, bool]] = field(default_factory=list)
 
     HEADER_FIELDS = (
@@ -246,7 +246,7 @@ class Aggregate:
             self.field_totals[name] = self.field_totals.get(name, 0) + getattr(score, name)
 
         self.confidence_pairs.extend(score.confidence_pairs)
-        self.confidence_pairs_min.extend(score.confidence_pairs_min)
+        self.confidence_pairs_mean.extend(score.confidence_pairs_mean)
         self.confidence_pairs_quantity.extend(score.confidence_pairs_quantity)
 
     # -- turunan ------------------------------------------------------------
@@ -292,9 +292,11 @@ class Aggregate:
 
     def split_for(self, variant: str) -> tuple[float | None, float | None, int, int]:
         """Pemisahan benar-vs-salah untuk salah satu kandidat rumus confidence."""
+        # ``confidence_pairs`` selalu berisi rumus yang sedang dipakai kontrak.
+        # Sejak kalibrasi 65 dokumen, itu adalah token terlemah.
         pairs = {
-            "mean": self.confidence_pairs,
-            "min": self.confidence_pairs_min,
+            "min": self.confidence_pairs,
+            "mean": self.confidence_pairs_mean,
             "quantity": self.confidence_pairs_quantity,
         }[variant]
         correct = [c for c, ok in pairs if ok]
