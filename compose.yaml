@@ -33,6 +33,11 @@ services:
         environment:
             OMP_NUM_THREADS: '${AI_OMP_NUM_THREADS:-4}'
             MKL_NUM_THREADS: '${AI_OMP_NUM_THREADS:-4}'
+            # Modul 1. 'qwen2vl' menuntut image Dockerfile.ml; dengan image slim
+            # torch tidak ada dan service gagal start. Default mock supaya
+            # `docker compose up` polos tetap menyala.
+            AI_ENGINE: '${AI_ENGINE:-mock}'
+            AI_DEBUG: '${AI_DEBUG:-false}'
             # Modul 2. 'auto' memakai YOLO bila image-nya punya torch
             # (Dockerfile.ml), selain itu jatuh ke mock — service tetap menyala.
             AI_VISION_ENGINE: '${AI_VISION_ENGINE:-auto}'
