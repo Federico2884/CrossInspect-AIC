@@ -116,11 +116,15 @@ class InspectionTest extends TestCase
             ->assertSee('Foto tumpukan barang');
     }
 
-    public function test_the_form_offers_mock_scenarios_for_both_modules(): void
+    public function test_the_front_page_carries_no_mock_controls(): void
     {
+        // Kendali skenario tinggal di /demo. Memisahkannya menjaga muka aplikasi
+        // menampilkan alur sungguhan saja — dan menghindarkan aturan "berkas
+        // wajib kecuali kalau..." yang membingungkan di formulir ini.
         $this->get('/')
-            ->assertSee('mixed_units')        // skenario dokumen
-            ->assertSee('partial_occlusion'); // skenario vision
+            ->assertDontSee('mixed_units')
+            ->assertDontSee('partial_occlusion')
+            ->assertSee(route('demo.create'), false);
     }
 
     public function test_a_matching_shipment_is_reported_as_matching(): void
@@ -257,5 +261,29 @@ class InspectionTest extends TestCase
             ->assertSessionHasErrors('photo');
 
         Http::assertNothingSent();
+    }
+
+    public function test_an_empty_detection_map_survives_the_round_trip(): void
+    {
+        // PHP tidak bisa membedakan map kosong dari list kosong: keduanya
+        // menjadi array(). Kalau respons Modul 2 di-decode lalu di-encode ulang,
+        // `class_counts: {}` berubah jadi `[]` dan Modul 3 menolaknya dengan 422.
+        //
+        // Itu bukan kasus pinggiran — persis itu yang terjadi setiap kali foto
+        // tidak memuat objek apa pun, yaitu saat vonisnya justru paling penting.
+        $vision = $this->visionPayload(['detected_count' => 0, 'class_counts' => new \stdClass()]);
+
+        Http::fake([
+            '*/vision/inspect' => Http::response(
+                json_encode($vision), 200, ['Content-Type' => 'application/json']
+            ),
+            '*/document/parse' => Http::response($this->documentPayload()),
+            '*/crosscheck' => Http::response($this->verdictPayload()),
+        ]);
+
+        $this->submit()->assertOk();
+
+        Http::assertSent(fn (Request $request) => ! str_contains($request->url(), '/crosscheck')
+            || str_contains($request->body(), '"class_counts":{}'));
     }
 }

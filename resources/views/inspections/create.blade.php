@@ -50,49 +50,6 @@
             </div>
         </div>
 
-        <details class="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-            <summary class="cursor-pointer text-sm font-medium text-neutral-700">
-                Skenario pengujian <span class="font-normal text-neutral-500">(khusus engine mock)</span>
-            </summary>
-
-            <div class="mt-4 grid gap-4 sm:grid-cols-2">
-                <div>
-                    <label for="document_scenario" class="block text-xs uppercase tracking-wide text-neutral-500">
-                        Dokumen
-                    </label>
-                    <select name="document_scenario"
-                            id="document_scenario"
-                            class="mt-2 block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm">
-                        <option value="">Otomatis — dari hash isi berkas</option>
-                        @foreach ($documentScenarios as $scenario)
-                            <option value="{{ $scenario }}" @selected(old('document_scenario') === $scenario)>{{ $scenario }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div>
-                    <label for="vision_scenario" class="block text-xs uppercase tracking-wide text-neutral-500">
-                        Foto barang
-                    </label>
-                    <select name="vision_scenario"
-                            id="vision_scenario"
-                            class="mt-2 block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm">
-                        <option value="">Otomatis — dari hash isi berkas</option>
-                        @foreach ($visionScenarios as $scenario)
-                            <option value="{{ $scenario }}" @selected(old('vision_scenario') === $scenario)>{{ $scenario }}</option>
-                        @endforeach
-                    </select>
-                </div>
-            </div>
-
-            <p class="mt-3 text-xs text-neutral-500">
-                Keduanya diabaikan begitu engine asli aktif. Pasangan
-                <span class="font-mono">mixed_units</span> +
-                <span class="font-mono">partial_occlusion</span> menghasilkan kasus paling menarik:
-                ada baris yang tidak bisa diverifikasi <em>dan</em> hitungan yang mungkin kurang.
-            </p>
-        </details>
-
         <div class="flex items-center gap-3 border-t border-neutral-100 pt-5">
             <button type="submit"
                     id="submit-button"
@@ -107,10 +64,17 @@
         </div>
     </form>
 
-    <p class="mt-6 text-sm text-neutral-500">
-        Ingin melihat seluruh field hasil pembacaan dokumen?
-        <a href="{{ route('documents.create') }}" class="underline hover:text-neutral-800">Halaman uji Modul 1</a>.
-    </p>
+    <div class="mt-6 space-y-1 text-sm text-neutral-500">
+        <p>
+            Belum punya berkas untuk dicoba?
+            <a href="{{ route('demo.create') }}" class="underline hover:text-neutral-800">Jalankan skenario contoh</a>
+            &mdash; tanpa unggahan.
+        </p>
+        <p>
+            Ingin melihat seluruh field hasil pembacaan dokumen?
+            <a href="{{ route('documents.create') }}" class="underline hover:text-neutral-800">Halaman uji Modul 1</a>.
+        </p>
+    </div>
 
     <script>
         // Tanpa ini, halaman yang menunggu inference beberapa menit terlihat

@@ -5,6 +5,16 @@
 @section('subheading', isset($documentName) ? $documentName . ' · ' . $photoName : '')
 
 @section('content')
+    @if (!empty($isDemo))
+        {{-- Tanpa penanda ini, keluaran fixture terlihat sama persis dengan
+             pemeriksaan sungguhan — perbedaan yang sangat penting saat demo. --}}
+        <div class="mb-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            Hasil <strong>skenario contoh</strong>, bukan pemeriksaan kiriman nyata.
+            <a href="{{ route('demo.create') }}" class="underline hover:text-sky-950">Ganti skenario</a>
+            atau <a href="{{ route('inspections.create') }}" class="underline hover:text-sky-950">periksa kiriman sungguhan</a>.
+        </div>
+    @endif
+
     @isset($failure)
         <div class="rounded-xl border border-red-200 bg-red-50 p-6">
             <h2 class="text-sm font-semibold text-red-900">Pemeriksaan gagal</h2>
@@ -50,7 +60,34 @@
             ];
         @endphp
 
+        @php
+            // Ambil dari meta yang sudah ada — tidak perlu panggilan tambahan.
+            $mockEngines = array_keys(array_filter([
+                'dokumen' => ($meta['document_engine'] ?? '') === 'mock',
+                'foto barang' => ($meta['vision_engine'] ?? '') === 'mock',
+            ]));
+        @endphp
+
         <div class="space-y-6">
+            @if ($mockEngines && empty($isDemo))
+                {{-- Tanpa peringatan ini, pengguna mengunggah berkas sungguhan lalu
+                     menerima fixture yang tampak seperti vonis nyata — dan
+                     menyimpulkan sistemnya rusak, bukan bahwa model belum aktif. --}}
+                <div class="rounded-xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
+                    <p class="font-semibold">Angka di bawah bukan hasil pembacaan berkas Anda.</p>
+                    <p class="mt-2">
+                        Modul {{ implode(' dan ', $mockEngines) }} masih dilayani <strong>engine mock</strong>,
+                        yang mengabaikan isi berkas dan memilih salah satu contoh bawaan berdasarkan
+                        hash berkas. Karena itu hasilnya bisa sama sekali tidak menyerupai apa yang
+                        Anda unggah.
+                    </p>
+                    <p class="mt-2">
+                        Untuk pembacaan sungguhan, jalankan ulang dengan image yang memuat model:
+                        <code class="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs">AI_DOCKERFILE=Dockerfile.ml AI_ENGINE=qwen2vl</code>
+                    </p>
+                </div>
+            @endif
+
             <section class="rounded-xl border p-6 {{ $style }}">
                 <div class="flex flex-wrap items-start justify-between gap-4">
                     <div>
