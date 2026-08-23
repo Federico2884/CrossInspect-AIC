@@ -40,7 +40,12 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Default Laravel 90 detik terlalu pendek untuk aplikasi ini:
+            // ParseDocument menunggu inference yang memakan menit (timeout-nya
+            // 900 detik). Bila retry_after lebih kecil dari timeout job,
+            // antrean mengira job-nya mati lalu menyerahkannya ke worker kedua
+            // — dokumen yang sama dibaca dua kali dan hasilnya saling menimpa.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1200),
             'after_commit' => false,
         ],
 

@@ -60,14 +60,17 @@
                 Baca dokumen
             </button>
             <span id="pending-note" class="hidden text-sm text-neutral-600">
-                Sedang membaca&hellip; dengan engine Qwen2-VL satu halaman bisa memakan beberapa menit.
+                Mengunggah&hellip;
             </span>
+            <a href="{{ route('documents.index') }}" class="ml-auto text-sm text-neutral-600 underline hover:text-neutral-900">
+                Riwayat pembacaan
+            </a>
         </div>
     </form>
 
     <script>
-        // Tanpa ini, halaman yang menunggu inference beberapa menit terlihat
-        // seperti hang dan mudah dikira gagal lalu di-submit ulang.
+        // Unggahan kini langsung dialihkan ke halaman tunggu, jadi ini hanya
+        // mencegah submit ganda pada berkas besar.
         document.getElementById('parse-form').addEventListener('submit', function () {
             document.getElementById('submit-button').disabled = true;
             document.getElementById('pending-note').classList.remove('hidden');

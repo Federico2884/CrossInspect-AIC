@@ -56,7 +56,7 @@ dengan bentuk persis seperti ini:
       "sku": "kode barang bila ada, selain itu null",
       "quantity": angka,
       "unit_raw": "satuan persis seperti tertulis, mis. Karton, Dus, Zak, Ball",
-      "quantity_per_unit": isi per satuan bila tertulis (mis. 12 pada "@ 12 pcs"), null bila tidak
+      "quantity_per_unit": angka saja, atau null
     }
   ]
 }
@@ -67,6 +67,25 @@ Aturan:
 - Sertakan SEMUA baris barang yang terlihat di halaman ini.
 - Bila sebuah field tidak ada di halaman ini, isi null.
 - Bila halaman ini tidak memuat tabel barang, kembalikan "items": [].
+
+Mengisi "quantity_per_unit":
+- **Sebagian besar baris tidak menyebutkannya. Untuk baris itu jawabannya null.**
+  Isi hanya bila tanda "@" atau kata "isi" benar-benar tercetak di baris itu.
+- Bila memang tercetak, tulis ANGKA TELANJANG — tanpa tanda kutip, tanpa satuan.
+  Benar  : "quantity_per_unit": 12        (dari "10 Karton @ 12 pcs")
+  SALAH  : "quantity_per_unit": 12 pcs    (bukan JSON yang sah)
+  SALAH  : "quantity_per_unit": "Dus"     (itu satuan, bukan isi)
+- Angka itu isi di dalam satu kemasan. Pada "10 Karton @ 12 pcs": quantity 10,
+  unit_raw "Karton", quantity_per_unit 12.
+
+Membedakan kolom nama dan kolom kode — dua kolom ini sering tertukar:
+- Kolom NAMA berjudul "Nama Barang", "Deskripsi Barang", "Uraian Barang", atau
+  "Nama Produk". Isinya kalimat, mis. "Teh Botol Sosro 250ml". Ini untuk "item_name".
+- Kolom KODE berjudul "Kode", "Kode Barang", "SKU", atau "Part No.". Isinya kode
+  pendek berhuruf besar dan berangka, mis. "SSR-526". Ini untuk "sku".
+- JANGAN menaruh kode seperti "SSR-526" di "item_name". Bila sebuah baris hanya
+  punya kode dan namanya tidak terbaca, isi "item_name" dengan teks yang tercetak
+  di kolom nama, bukan dengan kodenya.
 """
 
 
@@ -127,6 +146,7 @@ def _read_page(model, processor, image: Image.Image, page_number: int) -> Extrac
             **inputs,
             max_new_tokens=settings.qwen_max_new_tokens,
             do_sample=False,  # ekstraksi butuh determinisme, bukan variasi
+            repetition_penalty=settings.qwen_repetition_penalty,
             # generation_config bawaan Qwen menyetel temperature/top_p/top_k.
             # Ketiganya hanya berlaku saat sampling, jadi dengan do_sample=False
             # tidak ada warper yang dipasang dan nilainya tidak dipakai sama
@@ -209,10 +229,32 @@ class QwenEngine:
                 logger.exception("halaman %s gagal dibaca", page_number)
                 pages.append(ExtractedPage(ok=False, raw_text=""))
 
-        return assemble_response(
+        response = assemble_response(
             pages=pages,
             page_count=len(model_pages),
             truncated=rendered.total_pages > len(model_pages),
             total_pages=rendered.total_pages,
             engine_name=self.name,
         )
+
+        if settings.debug:
+            # Keluaran mentah model hanya bisa dilihat dari sini; begitu JSON
+            # gagal diurai, jejaknya hilang dan yang tersisa cuma "baris tidak
+            # ketemu" tanpa sebab. Ditaruh di meta.debug yang memang sudah ada
+            # di kontrak, dan tetap null selama AI_DEBUG belum dinyalakan —
+            # bentuk response tidak berubah.
+            response.meta.debug = {
+                "raw_pages": [page.raw_text for page in pages],
+                "rendered_pages": rendered.page_count,
+                "total_pages": rendered.total_pages,
+                # Kandidat confidence selain rata-rata atas nama barang, sejajar
+                # dengan items[]. Dikumpulkan supaya evaluasi penuh bisa menilai
+                # rumus mana yang benar-benar memisahkan baris benar dari salah
+                # tanpa perlu mengulang inference berjam-jam.
+                "confidence_mean": [c for page in pages for c in page.item_confidences_mean],
+                "confidence_quantity": [
+                    c for page in pages for c in page.item_confidences_quantity
+                ],
+            }
+
+        return response

@@ -1,24 +1,3 @@
-@extends('layouts.app')
-
-@section('title', 'Hasil Pembacaan')
-@section('heading', 'Hasil pembacaan')
-@section('subheading', $filename ?? '')
-
-@section('content')
-    @isset($failure)
-        <div class="rounded-xl border border-red-200 bg-red-50 p-6">
-            <h2 class="text-sm font-semibold text-red-900">Gagal membaca dokumen</h2>
-            <p class="mt-2 text-sm text-red-800">{{ $failure }}</p>
-            @if (!empty($code) || !empty($status))
-                <p class="mt-3 font-mono text-xs text-red-700">
-                    {{ $code ?? '' }}@if (!empty($status)) (HTTP {{ $status }})@endif
-                </p>
-            @endif
-            @if (!empty($detail))
-                <p class="mt-1 font-mono text-xs text-red-600">{{ $detail }}</p>
-            @endif
-        </div>
-    @else
         @php
             $items = $result['items'] ?? [];
             // confidence.items sejajar dengan items — dijamin oleh kontrak.
@@ -132,9 +111,10 @@
                                                 <span class="text-neutral-400">—</span>
                                             @else
                                                 {{-- Ambang engine untuk LOW_CONFIDENCE_ITEM; lihat AI_LOW_CONFIDENCE_THRESHOLD.
-                                                     Angka ini menandai baris paling ragu, BUKAN baris yang pasti salah:
-                                                     pada pengukuran terakhir model tetap yakin walau jawabannya keliru. --}}
-                                                <span class="{{ $score < 0.95 ? 'font-semibold text-amber-700' : 'text-neutral-600' }}">
+                                                     Terkalibrasi pada 845 baris: di bawah 0,50 sekitar separuh baris
+                                                     memang salah. Tetap alat bantu tinjau, bukan detektor kesalahan —
+                                                     sebagian besar baris salah lolos tanpa ditandai. --}}
+                                                <span class="{{ $score < 0.50 ? 'font-semibold text-amber-700' : 'text-neutral-600' }}">
                                                     {{ number_format($score * 100, 0) }}%
                                                 </span>
                                             @endif
@@ -157,11 +137,3 @@
                 @endif
             </section>
         </div>
-    @endisset
-
-    <div class="mt-8">
-        <a href="{{ route('documents.create') }}" class="text-sm text-neutral-600 underline hover:text-neutral-900">
-            &larr; Baca dokumen lain
-        </a>
-    </div>
-@endsection

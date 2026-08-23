@@ -35,15 +35,39 @@ def pct(value: float | None) -> str:
     return "—" if value is None else f"{value * 100:.1f}%"
 
 
+VARIANT_LABELS = {
+    "min": "Token terlemah pada nama (dipakai kontrak)",
+    "mean": "Rata-rata atas nama",
+    "quantity": "Rata-rata atas jumlah",
+}
+
+
+def _variant_rows(bucket: Aggregate) -> list[str]:
+    lines: list[str] = []
+    for variant, label in VARIANT_LABELS.items():
+        right, wrong, n_right, n_wrong = bucket.split_for(variant)
+        if right is None or wrong is None:
+            lines.append(f"| {label} | — | — | — | {n_right} | {n_wrong} |")
+            continue
+        gap = right - wrong
+        lines.append(
+            f"| {label} | {pct(right)} | {pct(wrong)} | {gap * 100:+.1f} poin | "
+            f"{n_right} | {n_wrong} |"
+        )
+    return lines
+
+
 def _rows_table(buckets: Sequence[Aggregate]) -> list[str]:
     lines = [
-        "| Kelompok | Dokumen | JSON terbaca | Recall baris | Presisi baris | Nama persis |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Kelompok | Dokumen | JSON terbaca | Recall baris | Presisi baris | "
+        "Nama terbaca | Nama persis |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for bucket in buckets:
         lines.append(
             f"| {bucket.label} | {bucket.documents} | {pct(bucket.parse_rate)} | "
-            f"{pct(bucket.recall)} | {pct(bucket.precision)} | {pct(bucket.exact_name_rate)} |"
+            f"{pct(bucket.recall)} | {pct(bucket.precision)} | "
+            f"{pct(bucket.name_read_rate)} | {pct(bucket.exact_name_rate)} |"
         )
     return lines
 
@@ -102,9 +126,13 @@ def render(scores: Sequence[DocumentScore], engine: str, threshold: float) -> st
         "",
         "## Menemukan baris",
         "",
-        f"Penjodohan memakai kemiripan nama dengan ambang {threshold:.2f}. Kolom "
-        "*Nama persis* menghitung baris yang namanya sama tepat setelah normalisasi;",
-        "selisihnya terhadap *Recall* adalah baris yang terbaca tetapi ditulis sedikit berbeda.",
+        f"Penjodohan memakai kemiripan nama dengan ambang {threshold:.2f}, lalu sapuan kedua "
+        "memakai jumlah+satuan untuk baris yang namanya meleset.",
+        "",
+        "*Recall* = barisnya ketemu, dengan cara apa pun. *Nama terbaca* = dari baris yang "
+        "ketemu, berapa yang ketemu lewat namanya sendiri — kurang dari 100% berarti model "
+        "menemukan baris dan menulis angkanya dengan benar, tetapi mengisi kolom nama dengan "
+        "hal lain (mis. kode barang). *Nama persis* lebih ketat lagi: ejaannya sama tepat.",
         "",
         *_rows_table([overall, *by_source]),
         "",
@@ -132,8 +160,16 @@ def render(scores: Sequence[DocumentScore], engine: str, threshold: float) -> st
         "",
         "## Apakah confidence bisa dipercaya?",
         "",
-        f"Rata-rata confidence baris **benar**: {pct(correct_conf)} (n={n_correct}) · "
-        f"baris **salah**: {pct(wrong_conf)} (n={n_wrong})",
+        "Confidence hanya berguna kalau angkanya berbeda antara baris benar dan baris salah.",
+        "Kolom *Selisih* itulah ukurannya; mendekati nol berarti angkanya tidak memberi tahu",
+        "apa-apa. Tiga kandidat rumus diukur berdampingan dari run yang sama.",
+        "",
+        "| Rumus | Baris benar | Baris salah | Selisih | n benar | n salah |",
+        "|---|---:|---:|---:|---:|---:|",
+        *_variant_rows(overall),
+        "",
+        f"Yang dipakai kontrak saat ini adalah **token terlemah pada nama barang**: "
+        f"benar {pct(correct_conf)} vs salah {pct(wrong_conf)}.",
         "",
     ]
 

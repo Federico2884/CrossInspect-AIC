@@ -54,7 +54,8 @@ class DocumentScore:
     # Menemukan baris.
     rows_truth: int = 0
     rows_predicted: int = 0
-    rows_matched: int = 0
+    rows_matched: int = 0  # ketemu, lewat nama maupun lewat jumlah+satuan
+    rows_name_matched: int = 0  # ketemu lewat namanya — namanya memang terbaca
     rows_exact_name: int = 0
 
     # Membaca isi baris — penyebut selalu rows_matched.
@@ -67,6 +68,11 @@ class DocumentScore:
 
     # (confidence, benar?) per baris terjodoh, untuk mengecek kalibrasi.
     confidence_pairs: list[tuple[float, bool]] = field(default_factory=list)
+    # Kandidat rumus lain, direkam berdampingan supaya ketiganya bisa
+    # dibandingkan dari satu kali run. Rata-rata atas nama barang sudah terbukti
+    # tidak memisahkan benar dari salah; dua ini belum diuji pada data cukup.
+    confidence_pairs_mean: list[tuple[float, bool]] = field(default_factory=list)
+    confidence_pairs_quantity: list[tuple[float, bool]] = field(default_factory=list)
     raw_text: str | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -96,6 +102,8 @@ def score_document(
     score_header: bool,
     score_page_count: bool = True,
     threshold: float = DEFAULT_THRESHOLD,
+    confidences_mean: Sequence[float] | None = None,
+    confidences_quantity: Sequence[float] | None = None,
     raw_text: str | None = None,
 ) -> DocumentScore:
     """Bandingkan satu response dengan ground truth-nya.
@@ -138,6 +146,7 @@ def score_document(
 
     result: MatchResult = match_items(truth_items, predicted_items, threshold)
     score.rows_matched = len(result.matches)
+    score.rows_name_matched = result.name_matches
     score.rows_exact_name = result.exact_matches
 
     item_confidences = list(response.confidence.items)
@@ -154,12 +163,16 @@ def score_document(
         score.sku_ok += int(_same_text(expected.sku, got.sku))
         score.source_page_ok += int(expected.source_page == got.source_page)
 
-        if match.predicted_index < len(item_confidences):
-            # "Benar" di sini berarti nama dan jumlahnya benar — itulah yang
-            # perlu diprediksi oleh confidence supaya berguna bagi operator.
-            score.confidence_pairs.append(
-                (item_confidences[match.predicted_index], match.exact and quantity_ok)
-            )
+        # "Benar" di sini berarti nama dan jumlahnya benar — itulah yang perlu
+        # diprediksi oleh confidence supaya berguna bagi operator.
+        correct = match.exact and quantity_ok
+        for source, sink in (
+            (item_confidences, score.confidence_pairs),
+            (confidences_mean or [], score.confidence_pairs_mean),
+            (confidences_quantity or [], score.confidence_pairs_quantity),
+        ):
+            if match.predicted_index < len(source):
+                sink.append((source[match.predicted_index], correct))
 
     return score
 
@@ -185,10 +198,13 @@ class Aggregate:
     rows_truth: int = 0
     rows_predicted: int = 0
     rows_matched: int = 0
+    rows_name_matched: int = 0
     rows_exact_name: int = 0
 
     field_totals: dict[str, int] = field(default_factory=dict)
     confidence_pairs: list[tuple[float, bool]] = field(default_factory=list)
+    confidence_pairs_mean: list[tuple[float, bool]] = field(default_factory=list)
+    confidence_pairs_quantity: list[tuple[float, bool]] = field(default_factory=list)
 
     HEADER_FIELDS = (
         "document_type_ok",
@@ -223,12 +239,15 @@ class Aggregate:
         self.rows_truth += score.rows_truth
         self.rows_predicted += score.rows_predicted
         self.rows_matched += score.rows_matched
+        self.rows_name_matched += score.rows_name_matched
         self.rows_exact_name += score.rows_exact_name
 
         for name in self.ITEM_FIELDS:
             self.field_totals[name] = self.field_totals.get(name, 0) + getattr(score, name)
 
         self.confidence_pairs.extend(score.confidence_pairs)
+        self.confidence_pairs_mean.extend(score.confidence_pairs_mean)
+        self.confidence_pairs_quantity.extend(score.confidence_pairs_quantity)
 
     # -- turunan ------------------------------------------------------------
 
@@ -249,6 +268,17 @@ class Aggregate:
         return _ratio(self.rows_exact_name, self.rows_truth)
 
     @property
+    def name_read_rate(self) -> float | None:
+        """Dari baris yang ketemu, berapa yang namanya benar-benar terbaca.
+
+        Kurang dari 100% berarti model menemukan barisnya dan menuliskan
+        angkanya dengan benar, tetapi mengisi kolom nama dengan sesuatu yang
+        lain — mis. kode barang. Itu bug penempatan kolom, bukan bug deteksi
+        baris, dan tanpa angka terpisah keduanya tampak sama.
+        """
+        return _ratio(self.rows_name_matched, self.rows_matched)
+
+    @property
     def mean_latency(self) -> float | None:
         return _ratio(self.latency_total, self.documents)
 
@@ -259,6 +289,24 @@ class Aggregate:
     def field_rate(self, name: str) -> float | None:
         """Penyebutnya baris terjodoh: 'dari yang ketemu, berapa yang benar'."""
         return _ratio(self.field_totals.get(name, 0), self.rows_matched)
+
+    def split_for(self, variant: str) -> tuple[float | None, float | None, int, int]:
+        """Pemisahan benar-vs-salah untuk salah satu kandidat rumus confidence."""
+        # ``confidence_pairs`` selalu berisi rumus yang sedang dipakai kontrak.
+        # Sejak kalibrasi 65 dokumen, itu adalah token terlemah.
+        pairs = {
+            "min": self.confidence_pairs,
+            "mean": self.confidence_pairs_mean,
+            "quantity": self.confidence_pairs_quantity,
+        }[variant]
+        correct = [c for c, ok in pairs if ok]
+        wrong = [c for c, ok in pairs if not ok]
+        return (
+            _ratio(sum(correct), len(correct)),
+            _ratio(sum(wrong), len(wrong)),
+            len(correct),
+            len(wrong),
+        )
 
     @property
     def confidence_split(self) -> tuple[float | None, float | None, int, int]:

@@ -77,7 +77,7 @@ PDF adalah satu-satunya format yang diterima Modul 1 tetapi ditolak Modul 2.
 | `sender` / `recipient` | string \| null | |
 | `page_count` | int ≥ 1 | Halaman yang benar-benar diproses (dibatasi 10). |
 | `items[]` | array | Boleh kosong. |
-| `confidence` | object | `document_number`, `items[]` (sejajar dengan `items`), `overall`. Semuanya 0.0–1.0. |
+| `confidence` | object | `document_number`, `items[]` (sejajar dengan `items`), `overall`. Semuanya 0.0–1.0. Baca catatan di bawah sebelum menyandarkan keputusan padanya. |
 | `warnings[]` | array | Masalah kualitas parse. **Bukan** error. |
 | `meta` | object | Field umum — lihat [kontrak induk](../../../CONTRACT.md#meta). Modul 1 tidak menambah field. |
 
@@ -103,6 +103,21 @@ PDF adalah satu-satunya format yang diterima Modul 1 tetapi ditolak Modul 2.
 > Surat Jalan asli memakai `koli`, `dus`, `zak`, `ball`, `slop`; jangan pernah menyandarkan
 > logika hanya pada enum ketika isinya `unknown`.
 
+> **Catatan confidence — baca sebelum memakainya.** Angkanya adalah peluang token
+> **terlemah** pada rentang teks yang menuliskan field itu. Rumus ini dipilih lewat
+> pengukuran 845 baris: ia memisahkan baris benar dari baris salah sejauh 18,2 poin,
+> sedangkan rata-rata (yang dipakai sebelumnya) hanya 4,4 poin.
+>
+> Yang bisa diharapkan darinya, pada ambang 0,50: menandai sekitar **6% baris**, dan
+> **lebih dari separuh yang ditandai memang salah**.
+>
+> Yang **tidak** boleh diharapkan: ini bukan detektor kesalahan. Sekitar **71% baris salah
+> lolos tanpa ditandai** — model kerap salah dengan penuh keyakinan. Pakailah untuk memilih
+> baris mana yang lebih dulu diperiksa manusia, bukan untuk memutuskan baris mana yang aman.
+>
+> Kalibrasi khusus `document_number` belum pernah diukur; rumusnya disamakan demi konsistensi,
+> bukan karena ada buktinya.
+
 ---
 
 ## Warning
@@ -112,13 +127,18 @@ Kode berikut khas Modul 1:
 
 | Code | Severity | Arti |
 |---|---|---|
-| `LOW_CONFIDENCE_ITEM` | warning | Barang terbaca dengan confidence rendah; `item_index` menunjuk ke barang tersebut. |
+| `LOW_CONFIDENCE_ITEM` | warning | Barang terbaca dengan confidence rendah; `item_index` menunjuk ke barang tersebut. Ambangnya 0,50 — lihat catatan confidence di bawah. |
 | `MISSING_DOCUMENT_DATE` | warning | Tanggal tidak ditemukan; `document_date` bernilai null. |
 | `MISSING_FIELD` | info/warning | Ada field lain yang gagal diekstrak. |
 | `AMBIGUOUS_UNIT` | warning | `unit_raw` tidak terpetakan ke enum; `unit_normalized` menjadi `unknown`. |
 | `UNRECOGNISED_DOCUMENT_TYPE` | error | Bukan Surat Jalan maupun Invoice. |
 | `PAGE_LIMIT_TRUNCATED` | warning | Dokumen melebihi batas 10 halaman. |
-| `QUANTITY_MISMATCH` | warning | Total yang tertulis tidak cocok dengan hasil hitungan. |
+| `QUANTITY_MISMATCH` | warning | **Dicadangkan — belum dipancarkan engine mana pun.** Lihat catatan di bawah. |
+
+> **Catatan `QUANTITY_MISMATCH`.** Kode ini sudah dipesan tempatnya, tetapi belum pernah
+> dikirim: untuk membandingkan total yang tertulis di dokumen dengan hasil hitungan, engine
+> harus lebih dulu mengekstrak total tercetak itu, dan sekarang belum. Jangan menulis
+> penanganan khusus untuknya — kode ini tidak akan muncul sampai fitur tersebut dikerjakan.
 
 ## Error
 

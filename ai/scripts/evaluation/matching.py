@@ -39,6 +39,7 @@ class ItemMatch:
     predicted_index: int
     similarity: float
     exact: bool
+    by_name: bool = True  # False = terjodoh lewat jumlah+satuan, namanya meleset
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,16 @@ class MatchResult:
     @property
     def exact_matches(self) -> int:
         return sum(1 for match in self.matches if match.exact)
+
+    @property
+    def name_matches(self) -> int:
+        """Baris yang ketemu lewat namanya — artinya namanya memang terbaca."""
+        return sum(1 for match in self.matches if match.by_name)
+
+    @property
+    def misnamed_matches(self) -> int:
+        """Baris yang ada di dokumen dan angkanya benar, tapi namanya salah."""
+        return sum(1 for match in self.matches if not match.by_name)
 
 
 def normalize_name(name: str | None) -> str:
@@ -124,6 +135,8 @@ def match_items(
             )
         )
 
+    _match_by_quantity_and_unit(truth, predicted, matches, used_truth, used_predicted)
+
     matches.sort(key=lambda m: m.truth_index)
 
     return MatchResult(
@@ -131,3 +144,69 @@ def match_items(
         missed_truth=[i for i in range(len(truth)) if i not in used_truth],
         spurious_predicted=[i for i in range(len(predicted)) if i not in used_predicted],
     )
+
+
+def _identity(item: object) -> tuple | None:
+    """Kunci cadangan: jumlah + satuan apa adanya."""
+    quantity = getattr(item, "quantity", None)
+    if quantity is None:
+        return None
+    unit = getattr(item, "unit_raw", "") or ""
+    return (quantity, unit.strip().casefold())
+
+
+def _match_by_quantity_and_unit(
+    truth: Sequence[HasItemName],
+    predicted: Sequence[HasItemName],
+    matches: list[ItemMatch],
+    used_truth: set[int],
+    used_predicted: set[int],
+) -> None:
+    """Sapuan kedua untuk baris yang namanya meleset tapi angkanya benar.
+
+    Tanpa ini, model yang menulis kode barang ke kolom nama terbaca seolah-olah
+    "barisnya tidak ketemu" — padahal barisnya ada dan jumlahnya benar. Dua
+    kegagalan itu butuh perbaikan yang sama sekali berbeda, jadi tidak boleh
+    dilaporkan sebagai satu angka.
+
+    Hanya pasangan yang **saling tunggal** yang diterima: kalau ada dua baris
+    dengan jumlah dan satuan sama, tidak ada cara jujur memilih, jadi keduanya
+    dibiarkan tidak terjodoh daripada ditebak.
+    """
+    free_truth = [i for i in range(len(truth)) if i not in used_truth]
+    free_predicted = [i for i in range(len(predicted)) if i not in used_predicted]
+
+    for t_index in free_truth:
+        key = _identity(truth[t_index])
+        if key is None:
+            continue
+
+        candidates = [
+            p_index
+            for p_index in free_predicted
+            if p_index not in used_predicted and _identity(predicted[p_index]) == key
+        ]
+        if len(candidates) != 1:
+            continue
+
+        # Sisi sebaliknya juga harus tunggal, supaya tidak ada tebakan tersembunyi.
+        rivals = [
+            other
+            for other in free_truth
+            if other not in used_truth and _identity(truth[other]) == key
+        ]
+        if len(rivals) != 1:
+            continue
+
+        p_index = candidates[0]
+        used_truth.add(t_index)
+        used_predicted.add(p_index)
+        matches.append(
+            ItemMatch(
+                truth_index=t_index,
+                predicted_index=p_index,
+                similarity=similarity(truth[t_index].item_name, predicted[p_index].item_name),
+                exact=False,
+                by_name=False,
+            )
+        )

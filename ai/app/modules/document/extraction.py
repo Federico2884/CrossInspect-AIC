@@ -13,12 +13,14 @@ lengkap dengan warning-nya.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
+from app.core.config import get_settings
 from app.modules.document import warnings as w
 from app.modules.document.schemas import (
     Confidence,
@@ -77,8 +79,16 @@ class ExtractedPage:
     sender: str | None = None
     recipient: str | None = None
     items: list[Item] = field(default_factory=list)
+    # Skor yang masuk kontrak: peluang token TERLEMAH pada rentang nama barang.
+    # Dipilih lewat pengukuran, bukan selera — pada 845 baris, rata-rata hanya
+    # memisahkan baris benar dari salah sejauh 4,4 poin, sedangkan token
+    # terlemah memisahkan 18,2 poin.
     item_confidences: list[float] = field(default_factory=list)
     document_number_confidence: float = 0.0
+    # Kandidat pembanding, tidak masuk kontrak. Tetap dikumpulkan supaya
+    # evaluasi berikutnya bisa menilai ulang ketiganya tanpa inference ulang.
+    item_confidences_mean: list[float] = field(default_factory=list)
+    item_confidences_quantity: list[float] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
@@ -116,6 +126,24 @@ def span_confidence(spans: Sequence[TokenSpan], start: int, end: int) -> float:
     return max(0.0, min(1.0, sum(hits) / len(hits)))
 
 
+def span_confidence_min(spans: Sequence[TokenSpan], start: int, end: int) -> float:
+    """Peluang token **terlemah** dalam rentang.
+
+    Alternatif dari rata-rata. Pada nama panjang, satu token ragu tenggelam
+    oleh belasan token yakin — padahal justru token ragu itu yang menandakan
+    barisnya perlu diperiksa. Dipakai sebagai kandidat pembanding; mana yang
+    benar-benar memisahkan baris benar dari salah baru bisa dinilai setelah
+    evaluasi penuh mengumpulkan cukup banyak baris salah.
+    """
+    if end <= start:
+        return 0.0
+
+    hits = [span.probability for span in spans if span.start < end and span.end > start]
+    if not hits:
+        return 0.0
+    return max(0.0, min(1.0, min(hits)))
+
+
 def confidence_for_value(text: str, spans: Sequence[TokenSpan], value: str | None) -> float:
     """Cari nilai di teks lalu hitung confidence token yang menuliskannya."""
     if not value:
@@ -126,16 +154,203 @@ def confidence_for_value(text: str, spans: Sequence[TokenSpan], value: str | Non
     return span_confidence(spans, index, index + len(str(value)))
 
 
+def confidence_for_value_min(text: str, spans: Sequence[TokenSpan], value: str | None) -> float:
+    """Seperti ``confidence_for_value``, tetapi memakai token terlemah."""
+    if not value:
+        return 0.0
+    index = text.find(str(value))
+    if index < 0:
+        return 0.0
+    return span_confidence_min(spans, index, index + len(str(value)))
+
+
 # --------------------------------------------------------------------------
 # JSON
 # --------------------------------------------------------------------------
 
+_TRAILING_COMMA = re.compile(r",+\s*([}\]])")
+_UNQUOTED_VALUE = re.compile(
+    r'(:\s*)([A-Za-z0-9_.\-@/()]+(?:\s+[A-Za-z0-9_.\-@/()]+)*)(\s*[,}\]])'
+)
+
+
+def _repair_json_string(text: str) -> str:
+    """Perbaiki kebiasaan sintaks JSON yang cacat dari model LLM/VLM."""
+    cleaned = _TRAILING_COMMA.sub(r"\1", text)
+
+    def _quote_unquoted(match: re.Match) -> str:
+        prefix, val, suffix = match.group(1), match.group(2).strip(), match.group(3)
+        if val in {"true", "false", "null"}:
+            return f"{prefix}{val}{suffix}"
+        if re.match(r"^-?\d+(?:\.\d+)?$", val):
+            return f"{prefix}{val}{suffix}"
+        return f'{prefix}"{val}"{suffix}'
+
+    cleaned = _UNQUOTED_VALUE.sub(_quote_unquoted, cleaned)
+    return cleaned
+
+
+def _close_truncated_json(text: str) -> str:
+    """Tutup kurung/petik yang terpotong bila keluaran terputus di tengah jalan."""
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]" and stack and stack[-1] == char:
+            stack.pop()
+
+    result = text
+    if in_string:
+        result += '"'
+    while stack:
+        result += stack.pop()
+    return result
+
+
+def _try_parse_python_dict(text: str) -> dict | None:
+    """Coba uraikan kamus gaya Python (petik tunggal, None, True, False)."""
+    converted = re.sub(r"\bnull\b", "None", text)
+    converted = re.sub(r"\btrue\b", "True", converted)
+    converted = re.sub(r"\bfalse\b", "False", converted)
+    try:
+        parsed = ast.literal_eval(converted)
+        if isinstance(parsed, dict):
+            return parsed
+    except (ValueError, SyntaxError):
+        pass
+    return None
+
+
+def _salvage_partial_payload(text: str) -> dict | None:
+    """Penyelamatan darurat bila seluruh JSON tidak dapat diurai utuh.
+
+    Mengekstrak metadata dokumen dan baris barang secara modular agar baris
+    yang terbaca dengan benar tidak terbuang hanya karena satu bagian JSON rusak.
+    """
+    if not text or "{" not in text:
+        return None
+
+    # Cari metadata tingkat dokumen
+    doc_type_m = re.search(
+        r'"(?:document_type|jenis_dokumen)"\s*:\s*"([^"]+)"', text, re.IGNORECASE
+    )
+    doc_num_m = re.search(
+        r'"(?:document_number|nomor_dokumen)"\s*:\s*"([^"]+)"', text, re.IGNORECASE
+    )
+    doc_date_m = re.search(
+        r'"(?:document_date|tanggal)"\s*:\s*"([^"]+)"', text, re.IGNORECASE
+    )
+    sender_m = re.search(r'"(?:sender|pengirim)"\s*:\s*"([^"]+)"', text, re.IGNORECASE)
+    recipient_m = re.search(r'"(?:recipient|penerima)"\s*:\s*"([^"]+)"', text, re.IGNORECASE)
+
+    # Cari blok barang individual
+    item_blocks = re.findall(
+        r'\{[^{}]*(?:"item_name"|"nama_barang")[^{}]*\}', text, re.IGNORECASE
+    )
+    items: list[dict] = []
+
+    for block in item_blocks:
+        parsed_item = None
+        for candidate_block in (block, _repair_json_string(block)):
+            try:
+                p = json.loads(candidate_block)
+                if isinstance(p, dict):
+                    parsed_item = p
+                    break
+            except json.JSONDecodeError:
+                continue
+
+        if parsed_item is None:
+            name_m = re.search(
+                r'"(?:item_name|nama_barang|name)"\s*:\s*"([^"]+)"', block, re.IGNORECASE
+            )
+            if not name_m:
+                continue
+            sku_m = re.search(
+                r'"(?:sku|kode|kode_barang)"\s*:\s*"([^"]+)"', block, re.IGNORECASE
+            )
+            qty_m = re.search(
+                r'"(?:quantity|jumlah)"\s*:\s*"?([^",}\s]+)"?', block, re.IGNORECASE
+            )
+            unit_m = re.search(
+                r'"(?:unit_raw|satuan|unit)"\s*:\s*"([^"]+)"', block, re.IGNORECASE
+            )
+            qpu_m = re.search(
+                r'"(?:quantity_per_unit|isi_per_satuan)"\s*:\s*"?([^",}\s]+)"?',
+                block,
+                re.IGNORECASE,
+            )
+
+            parsed_item = {
+                "item_name": name_m.group(1) if name_m else None,
+                "sku": sku_m.group(1) if sku_m else None,
+                "quantity": qty_m.group(1) if qty_m else None,
+                "unit_raw": unit_m.group(1) if unit_m else None,
+                "quantity_per_unit": qpu_m.group(1) if qpu_m else None,
+            }
+
+        if parsed_item and (parsed_item.get("item_name") or parsed_item.get("nama_barang")):
+            items.append(parsed_item)
+
+    has_meta = any([doc_type_m, doc_num_m, doc_date_m, sender_m, recipient_m])
+    if not items and not has_meta:
+        return None
+
+    salvaged: dict = {}
+    if doc_type_m:
+        salvaged["document_type"] = doc_type_m.group(1)
+    if doc_num_m:
+        salvaged["document_number"] = doc_num_m.group(1)
+    if doc_date_m:
+        salvaged["document_date"] = doc_date_m.group(1)
+    if sender_m:
+        salvaged["sender"] = sender_m.group(1)
+    if recipient_m:
+        salvaged["recipient"] = recipient_m.group(1)
+    salvaged["items"] = items
+
+    return salvaged
+
+
+def _is_root_payload(data: dict) -> bool:
+    """Pastikan kamus adalah dokumen tingkat atas, bukan hanya satu baris barang."""
+    root_keys = {
+        "document_type",
+        "jenis_dokumen",
+        "document_number",
+        "nomor_dokumen",
+        "document_date",
+        "tanggal",
+        "sender",
+        "pengirim",
+        "recipient",
+        "penerima",
+        "items",
+        "barang",
+    }
+    return any(key in data for key in root_keys)
+
 
 def extract_json_object(text: str) -> dict | None:
-    """Ambil objek JSON pertama dari keluaran model.
+    """Ambil objek JSON pertama dari keluaran model, dengan toleransi sintaks.
 
-    Model kerap membungkus jawaban dengan pagar markdown atau menambah kalimat
-    penutup. Keduanya diperlakukan sebagai hal normal, bukan error.
+    Model kerap membungkus jawaban dengan pagar markdown, menambah kalimat
+    penutup, koma gantung, nilai tak terkutip, atau output terpotong.
+    Semua hal tersebut diperbaiki dan diselamatkan bila memungkinkan.
     """
     if not text:
         return None
@@ -148,15 +363,43 @@ def extract_json_object(text: str) -> dict | None:
 
     for candidate in candidates:
         block = _first_balanced_object(candidate)
-        if block is None:
-            continue
-        try:
-            parsed = json.loads(block)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
+        blocks_to_try: list[str] = []
+        if block is not None:
+            blocks_to_try.append(block)
+        else:
+            start = candidate.find("{")
+            if start >= 0:
+                blocks_to_try.append(candidate[start:])
+
+        for raw_block in blocks_to_try:
+            try:
+                parsed = json.loads(raw_block)
+                if isinstance(parsed, dict) and _is_root_payload(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            repaired = _repair_json_string(raw_block)
+            try:
+                parsed = json.loads(repaired)
+                if isinstance(parsed, dict) and _is_root_payload(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            closed = _close_truncated_json(repaired)
+            try:
+                parsed = json.loads(closed)
+                if isinstance(parsed, dict) and _is_root_payload(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            parsed_py = _try_parse_python_dict(raw_block)
+            if parsed_py is not None and _is_root_payload(parsed_py):
+                return parsed_py
+
+    return _salvage_partial_payload(text)
 
 
 def _first_balanced_object(text: str) -> str | None:
@@ -334,12 +577,22 @@ def extract_page(
 
     items: list[Item] = []
     confidences: list[float] = []
+    confidences_mean: list[float] = []
+    confidences_qty: list[float] = []
     for row in rows:
         item = build_item(row, source_page)
         if item is None:
             continue
         items.append(item)
-        confidences.append(confidence_for_value(raw_text, spans, item.item_name))
+        # Token terlemah, bukan rata-rata: satu token ragu di tengah nama
+        # panjang tenggelam bila dirata-rata, padahal justru token itulah
+        # tanda barisnya perlu diperiksa.
+        confidences.append(confidence_for_value_min(raw_text, spans, item.item_name))
+        confidences_mean.append(confidence_for_value(raw_text, spans, item.item_name))
+        # Rentang jumlah. Diduga paling relevan karena "benar" pada evaluasi
+        # berarti nama DAN jumlah benar — ternyata justru pemisah terburuk
+        # (2,3 poin). Disimpan sebagai pembanding.
+        confidences_qty.append(confidence_for_value(raw_text, spans, str(item.quantity)))
 
     number = _clean_str(payload.get("document_number") or payload.get("nomor_dokumen"))
 
@@ -355,7 +608,13 @@ def extract_page(
         recipient=_clean_str(payload.get("recipient") or payload.get("penerima")),
         items=items,
         item_confidences=confidences,
-        document_number_confidence=confidence_for_value(raw_text, spans, number),
+        item_confidences_mean=confidences_mean,
+        item_confidences_quantity=confidences_qty,
+        # Definisi yang sama dipakai lintas field supaya satu angka berarti
+        # satu hal. Kalibrasi khusus nomor dokumen BELUM pernah diukur —
+        # evaluasi hanya menilai baris barang — jadi ini konsistensi, bukan
+        # bukti.
+        document_number_confidence=confidence_for_value_min(raw_text, spans, number),
     )
 
 
@@ -363,7 +622,14 @@ def extract_page(
 # Gabungan -> response
 # --------------------------------------------------------------------------
 
-LOW_CONFIDENCE_THRESHOLD = 0.55
+def low_confidence_threshold() -> float:
+    """Ambang LOW_CONFIDENCE_ITEM, bisa disetel lewat ``AI_LOW_CONFIDENCE_THRESHOLD``.
+
+    Dibaca saat dipakai, bukan sebagai konstanta modul, supaya nilainya bisa
+    dikalibrasi ulang dari environment setelah evaluasi penuh tanpa menyentuh
+    kode. Lihat catatan panjang di ``config.py`` soal kenapa 0.55 diganti.
+    """
+    return get_settings().low_confidence_threshold
 
 
 def assemble_response(
@@ -380,6 +646,7 @@ def assemble_response(
     halaman pertama, sedangkan barang tersebar.
     """
     warnings: list[ParseWarning] = []
+    threshold = low_confidence_threshold()
 
     items: list[Item] = []
     item_confidences: list[float] = []
@@ -419,7 +686,7 @@ def assemble_response(
         )
 
     for index, (item, score) in enumerate(zip(items, item_confidences, strict=False)):
-        if score < LOW_CONFIDENCE_THRESHOLD:
+        if score < threshold:
             warnings.append(
                 w.warning(
                     w.LOW_CONFIDENCE_ITEM,
