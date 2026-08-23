@@ -30,7 +30,7 @@
                         </a>
                         <a href="{{ route('documents.create') }}"
                            class="{{ request()->routeIs('documents.*') ? 'text-neutral-900 font-semibold' : 'text-neutral-500 hover:text-neutral-800' }}">
-                            Uji Modul 1
+                            Uji PDF Reader
                         </a>
                     </nav>
                 </div>
