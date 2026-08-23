@@ -82,9 +82,12 @@
         ])
     @endif
 
-    <div class="mt-8">
-        <a href="{{ route('inspections.create') }}" class="text-sm text-neutral-600 underline hover:text-neutral-900">
+    <div class="mt-8 flex items-center gap-6 text-sm">
+        <a href="{{ route('inspections.create') }}" class="text-neutral-600 underline hover:text-neutral-900">
             &larr; Periksa kiriman lain
+        </a>
+        <a href="{{ route('inspections.index') }}" class="text-neutral-600 underline hover:text-neutral-900">
+            Riwayat pemeriksaan
         </a>
     </div>
 @endsection

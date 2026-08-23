@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Route;
 // Alur cross-check adalah muka aplikasi: satu dokumen, satu foto, satu vonis.
 Route::get('/', [InspectionController::class, 'create'])->name('inspections.create');
 Route::post('/inspections', [InspectionController::class, 'inspect'])->name('inspections.run');
+Route::get('/inspections/riwayat', [InspectionController::class, 'index'])->name('inspections.index');
 Route::get('/inspections/{inspection}', [InspectionController::class, 'show'])
     ->whereNumber('inspection')
     ->name('inspections.show');

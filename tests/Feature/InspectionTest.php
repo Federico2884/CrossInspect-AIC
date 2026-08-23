@@ -383,4 +383,49 @@ class InspectionTest extends TestCase
         Http::assertSent(fn (Request $request) => ! str_contains($request->url(), '/crosscheck')
             || str_contains($request->body(), '"class_counts":{}'));
     }
+
+    public function test_inspection_result_shows_document_metadata(): void
+    {
+        $this->fakeAllThree();
+        $inspection = $this->inspectionFor();
+        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
+
+        $this->get(route('inspections.show', $inspection))
+            ->assertOk()
+            ->assertSee('SJ/2026/08/00142')
+            ->assertSee('PT Sinar Terang')
+            ->assertSee('Toko Maju')
+            ->assertSee('2026-08-12')
+            ->assertSee('SURAT_JALAN');
+    }
+
+    public function test_history_lists_past_inspections(): void
+    {
+        $inspection = $this->inspectionFor([
+            'status' => Inspection::STATUS_DONE,
+            'document_response' => ['data' => $this->documentPayload()],
+            'verdict_response' => $this->verdictPayload(),
+        ]);
+
+        $this->get(route('inspections.index'))
+            ->assertOk()
+            ->assertSee('Riwayat pemeriksaan')
+            ->assertSee('SJ/2026/08/00142')
+            ->assertSee('Cocok');
+    }
+
+    public function test_history_url_is_not_swallowed_by_the_id_wildcard(): void
+    {
+        $this->get('/inspections/riwayat')
+            ->assertOk()
+            ->assertDontSee('Pemeriksaan gagal')
+            ->assertSee('Riwayat pemeriksaan');
+    }
+
+    public function test_history_is_empty_without_crashing(): void
+    {
+        $this->get('/inspections/riwayat')
+            ->assertOk()
+            ->assertSee('Belum ada pemeriksaan kiriman');
+    }
 }

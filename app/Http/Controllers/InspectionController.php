@@ -17,6 +17,13 @@ use Illuminate\View\View;
  */
 class InspectionController extends Controller
 {
+    public function index(): View
+    {
+        return view('inspections.index', [
+            'inspections' => Inspection::latest()->paginate(20),
+        ]);
+    }
+
     public function create(): View
     {
         return view('inspections.create');

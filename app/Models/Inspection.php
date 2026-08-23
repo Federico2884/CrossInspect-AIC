@@ -90,4 +90,21 @@ class Inspection extends Model
             default => 'Sedang diproses…',
         };
     }
+
+    public function documentNumber(): ?string
+    {
+        return $this->document_response['data']['document_number']
+            ?? $this->document_response['document_number']
+            ?? null;
+    }
+
+    public function verdictStatus(): ?string
+    {
+        return $this->verdict_response['status'] ?? null;
+    }
+
+    public function quantityDifference(): ?int
+    {
+        return $this->verdict_response['quantity']['difference'] ?? null;
+    }
 }

@@ -50,17 +50,23 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-3 border-t border-neutral-100 pt-5">
-            <button type="submit"
-                    id="submit-button"
-                    class="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white
-                           hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60">
-                Periksa kiriman
-            </button>
-            <span id="pending-note" class="hidden text-sm text-neutral-600">
-                Memeriksa&hellip; foto selesai dalam sekejap, tetapi pembacaan dokumen dengan
-                engine Qwen2-VL bisa memakan beberapa menit.
-            </span>
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-5">
+            <div class="flex items-center gap-3">
+                <button type="submit"
+                        id="submit-button"
+                        class="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white
+                               hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60">
+                    Periksa kiriman
+                </button>
+                <span id="pending-note" class="hidden text-sm text-neutral-600">
+                    Memeriksa&hellip; foto selesai dalam sekejap, tetapi pembacaan dokumen dengan
+                    engine Qwen2-VL bisa memakan beberapa menit.
+                </span>
+            </div>
+            <a href="{{ route('inspections.index') }}"
+               class="text-sm font-medium text-neutral-600 underline hover:text-neutral-900">
+                Lihat riwayat pemeriksaan &rarr;
+            </a>
         </div>
     </form>
 

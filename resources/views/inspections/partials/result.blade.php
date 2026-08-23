@@ -96,6 +96,43 @@
         @endif
     </section>
 
+    <section class="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <span class="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
+                    {{ $document['document_type'] ?? 'SURAT_JALAN' }}
+                </span>
+                <h3 class="mt-3 font-mono text-lg font-semibold text-neutral-900">
+                    {{ ($document['document_number'] ?? '') !== '' ? $document['document_number'] : '— nomor tidak terbaca —' }}
+                </h3>
+            </div>
+            @if (isset($document['confidence']['overall']))
+                <div class="text-right">
+                    <div class="text-xs uppercase tracking-wide text-neutral-500">Keyakinan OCR</div>
+                    <div class="text-2xl font-semibold tabular-nums text-neutral-800">
+                        {{ number_format($document['confidence']['overall'] * 100, 0) }}%
+                    </div>
+                </div>
+            @endif
+        </div>
+
+        <dl class="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-neutral-100 pt-5 text-sm sm:grid-cols-4">
+            @foreach ([
+                'Tanggal' => $document['document_date'] ?? null,
+                'Pengirim' => $document['sender'] ?? null,
+                'Penerima' => $document['recipient'] ?? null,
+                'Halaman' => $document['page_count'] ?? null,
+            ] as $dlabel => $dval)
+                <div>
+                    <dt class="text-xs uppercase tracking-wide text-neutral-500">{{ $dlabel }}</dt>
+                    <dd class="mt-1 font-medium {{ $dval === null ? 'text-neutral-400' : 'text-neutral-900' }}">
+                        {{ $dval ?? '—' }}
+                    </dd>
+                </div>
+            @endforeach
+        </dl>
+    </section>
+
     @if (!empty($warnings))
         <section class="space-y-2">
             @foreach ($warnings as $warning)
