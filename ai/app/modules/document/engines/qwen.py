@@ -56,7 +56,7 @@ dengan bentuk persis seperti ini:
       "sku": "kode barang bila ada, selain itu null",
       "quantity": angka,
       "unit_raw": "satuan persis seperti tertulis, mis. Karton, Dus, Zak, Ball",
-      "quantity_per_unit": isi per satuan bila tertulis (mis. 12 pada "@ 12 pcs"), null bila tidak
+      "quantity_per_unit": angka saja, atau null
     }
   ]
 }
@@ -67,6 +67,16 @@ Aturan:
 - Sertakan SEMUA baris barang yang terlihat di halaman ini.
 - Bila sebuah field tidak ada di halaman ini, isi null.
 - Bila halaman ini tidak memuat tabel barang, kembalikan "items": [].
+
+Mengisi "quantity_per_unit":
+- **Sebagian besar baris tidak menyebutkannya. Untuk baris itu jawabannya null.**
+  Isi hanya bila tanda "@" atau kata "isi" benar-benar tercetak di baris itu.
+- Bila memang tercetak, tulis ANGKA TELANJANG — tanpa tanda kutip, tanpa satuan.
+  Benar  : "quantity_per_unit": 12        (dari "10 Karton @ 12 pcs")
+  SALAH  : "quantity_per_unit": 12 pcs    (bukan JSON yang sah)
+  SALAH  : "quantity_per_unit": "Dus"     (itu satuan, bukan isi)
+- Angka itu isi di dalam satu kemasan. Pada "10 Karton @ 12 pcs": quantity 10,
+  unit_raw "Karton", quantity_per_unit 12.
 
 Membedakan kolom nama dan kolom kode — dua kolom ini sering tertukar:
 - Kolom NAMA berjudul "Nama Barang", "Deskripsi Barang", "Uraian Barang", atau
