@@ -21,5 +21,7 @@ qwen-vl-utils==0.0.8            # image resizing helpers for Qwen2-VL prompts
 # --- Modul 2: Physical Inspection (YOLO) ---
 # Ikut di sini, bukan di requirements.txt, karena ultralytics menarik torch —
 # dan torch adalah alasan utama image slim dipisahkan sejak awal.
-# Tanpa ini service tetap menyala: engine 'auto' jatuh ke mock.
+# opencv-python-headless dibutuhkan agar ultralytics tidak mencoba memuat
+# library GUI/X11 (libxcb.so.1) yang absen di Debian slim image.
+opencv-python-headless>=4.8.0
 ultralytics==8.3.55
