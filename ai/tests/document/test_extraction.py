@@ -69,6 +69,81 @@ def test_braces_inside_strings_do_not_break_balancing():
     assert extract_json_object(json.dumps(payload))["document_number"] == "SJ/{2026}/08"
 
 
+def test_recovers_json_with_trailing_commas():
+    text = (
+        '{"document_number": "SJ/2026/08/00142", '
+        '"items": [{"item_name": "Susu UHT", "quantity": 10,},],}'
+    )
+    res = extract_json_object(text)
+    assert res is not None
+    assert res["document_number"] == "SJ/2026/08/00142"
+    assert len(res["items"]) == 1
+    assert res["items"][0]["item_name"] == "Susu UHT"
+
+
+def test_recovers_json_with_unquoted_values():
+    """Model kadang mengeluarkan nilai seperti 'quantity_per_unit: 6 pcs' tanpa tanda kutip."""
+    text = """{
+        "document_type": "SURAT_JALAN",
+        "document_number": "SJ-0017",
+        "items": [
+            {
+                "item_name": "Minyak Goreng 2L",
+                "quantity": 10,
+                "unit_raw": "Karton",
+                "quantity_per_unit": 6 pcs
+            }
+        ]
+    }"""
+    res = extract_json_object(text)
+    assert res is not None
+    assert res["document_number"] == "SJ-0017"
+    assert len(res["items"]) == 1
+    assert res["items"][0]["quantity_per_unit"] == "6 pcs"
+
+
+def test_recovers_single_quoted_json():
+    text = (
+        "{'document_type': 'SURAT_JALAN', 'document_number': 'SJ-123', "
+        "'items': [{'item_name': 'Kopi', 'quantity': 5, 'unit_raw': 'Dus'}]}"
+    )
+    res = extract_json_object(text)
+    assert res is not None
+    assert res["document_number"] == "SJ-123"
+    assert res["items"][0]["item_name"] == "Kopi"
+
+
+def test_recovers_truncated_json_missing_closing_brackets():
+    text = (
+        '{"document_type": "SURAT_JALAN", "document_number": "SJ-999", '
+        '"items": [{"item_name": "Gula 1kg", "quantity": 20, "unit_raw": "Sak"}'
+    )
+    res = extract_json_object(text)
+    assert res is not None
+    assert res["document_number"] == "SJ-999"
+    assert len(res["items"]) == 1
+    assert res["items"][0]["item_name"] == "Gula 1kg"
+
+
+def test_salvages_items_from_heavily_corrupted_payload():
+    """Bila JSON luar hancur, baris barang individual dan nomor dokumen tetap diselamatkan."""
+    text = """
+    Berikut adalah data yang saya baca:
+    "document_number": "SJ/CORRUPT/01",
+    "document_type": "SURAT_JALAN",
+    "items": [ CORRUPTED SYNTAX !!!
+        {"item_name": "Beras Premium 5kg", "quantity": 50, "unit_raw": "Karung"},
+        {"item_name": "Minyak SunCo 2L", "quantity": 25, "unit_raw": "Dus", "quantity_per_unit": 6}
+    ] TAMBAHAN TEKS RUSAK
+    """
+    res = extract_json_object(text)
+    assert res is not None
+    assert res["document_number"] == "SJ/CORRUPT/01"
+    assert len(res["items"]) == 2
+    assert res["items"][0]["item_name"] == "Beras Premium 5kg"
+    assert res["items"][1]["item_name"] == "Minyak SunCo 2L"
+
+
 @pytest.mark.parametrize("text", ["", "tidak ada JSON di sini", "{ rusak", "[1, 2, 3]"])
 def test_unparseable_output_returns_none_not_an_exception(text: str):
     assert extract_json_object(text) is None

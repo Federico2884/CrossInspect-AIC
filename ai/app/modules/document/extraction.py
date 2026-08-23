@@ -13,6 +13,7 @@ lengkap dengan warning-nya.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from collections.abc import Sequence
@@ -167,12 +168,189 @@ def confidence_for_value_min(text: str, spans: Sequence[TokenSpan], value: str |
 # JSON
 # --------------------------------------------------------------------------
 
+_TRAILING_COMMA = re.compile(r",+\s*([}\]])")
+_UNQUOTED_VALUE = re.compile(
+    r'(:\s*)([A-Za-z0-9_.\-@/()]+(?:\s+[A-Za-z0-9_.\-@/()]+)*)(\s*[,}\]])'
+)
+
+
+def _repair_json_string(text: str) -> str:
+    """Perbaiki kebiasaan sintaks JSON yang cacat dari model LLM/VLM."""
+    cleaned = _TRAILING_COMMA.sub(r"\1", text)
+
+    def _quote_unquoted(match: re.Match) -> str:
+        prefix, val, suffix = match.group(1), match.group(2).strip(), match.group(3)
+        if val in {"true", "false", "null"}:
+            return f"{prefix}{val}{suffix}"
+        if re.match(r"^-?\d+(?:\.\d+)?$", val):
+            return f"{prefix}{val}{suffix}"
+        return f'{prefix}"{val}"{suffix}'
+
+    cleaned = _UNQUOTED_VALUE.sub(_quote_unquoted, cleaned)
+    return cleaned
+
+
+def _close_truncated_json(text: str) -> str:
+    """Tutup kurung/petik yang terpotong bila keluaran terputus di tengah jalan."""
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]" and stack and stack[-1] == char:
+            stack.pop()
+
+    result = text
+    if in_string:
+        result += '"'
+    while stack:
+        result += stack.pop()
+    return result
+
+
+def _try_parse_python_dict(text: str) -> dict | None:
+    """Coba uraikan kamus gaya Python (petik tunggal, None, True, False)."""
+    converted = re.sub(r"\bnull\b", "None", text)
+    converted = re.sub(r"\btrue\b", "True", converted)
+    converted = re.sub(r"\bfalse\b", "False", converted)
+    try:
+        parsed = ast.literal_eval(converted)
+        if isinstance(parsed, dict):
+            return parsed
+    except (ValueError, SyntaxError):
+        pass
+    return None
+
+
+def _salvage_partial_payload(text: str) -> dict | None:
+    """Penyelamatan darurat bila seluruh JSON tidak dapat diurai utuh.
+
+    Mengekstrak metadata dokumen dan baris barang secara modular agar baris
+    yang terbaca dengan benar tidak terbuang hanya karena satu bagian JSON rusak.
+    """
+    if not text or "{" not in text:
+        return None
+
+    # Cari metadata tingkat dokumen
+    doc_type_m = re.search(
+        r'"(?:document_type|jenis_dokumen)"\s*:\s*"([^"]+)"', text, re.IGNORECASE
+    )
+    doc_num_m = re.search(
+        r'"(?:document_number|nomor_dokumen)"\s*:\s*"([^"]+)"', text, re.IGNORECASE
+    )
+    doc_date_m = re.search(
+        r'"(?:document_date|tanggal)"\s*:\s*"([^"]+)"', text, re.IGNORECASE
+    )
+    sender_m = re.search(r'"(?:sender|pengirim)"\s*:\s*"([^"]+)"', text, re.IGNORECASE)
+    recipient_m = re.search(r'"(?:recipient|penerima)"\s*:\s*"([^"]+)"', text, re.IGNORECASE)
+
+    # Cari blok barang individual
+    item_blocks = re.findall(
+        r'\{[^{}]*(?:"item_name"|"nama_barang")[^{}]*\}', text, re.IGNORECASE
+    )
+    items: list[dict] = []
+
+    for block in item_blocks:
+        parsed_item = None
+        for candidate_block in (block, _repair_json_string(block)):
+            try:
+                p = json.loads(candidate_block)
+                if isinstance(p, dict):
+                    parsed_item = p
+                    break
+            except json.JSONDecodeError:
+                continue
+
+        if parsed_item is None:
+            name_m = re.search(
+                r'"(?:item_name|nama_barang|name)"\s*:\s*"([^"]+)"', block, re.IGNORECASE
+            )
+            if not name_m:
+                continue
+            sku_m = re.search(
+                r'"(?:sku|kode|kode_barang)"\s*:\s*"([^"]+)"', block, re.IGNORECASE
+            )
+            qty_m = re.search(
+                r'"(?:quantity|jumlah)"\s*:\s*"?([^",}\s]+)"?', block, re.IGNORECASE
+            )
+            unit_m = re.search(
+                r'"(?:unit_raw|satuan|unit)"\s*:\s*"([^"]+)"', block, re.IGNORECASE
+            )
+            qpu_m = re.search(
+                r'"(?:quantity_per_unit|isi_per_satuan)"\s*:\s*"?([^",}\s]+)"?',
+                block,
+                re.IGNORECASE,
+            )
+
+            parsed_item = {
+                "item_name": name_m.group(1) if name_m else None,
+                "sku": sku_m.group(1) if sku_m else None,
+                "quantity": qty_m.group(1) if qty_m else None,
+                "unit_raw": unit_m.group(1) if unit_m else None,
+                "quantity_per_unit": qpu_m.group(1) if qpu_m else None,
+            }
+
+        if parsed_item and (parsed_item.get("item_name") or parsed_item.get("nama_barang")):
+            items.append(parsed_item)
+
+    has_meta = any([doc_type_m, doc_num_m, doc_date_m, sender_m, recipient_m])
+    if not items and not has_meta:
+        return None
+
+    salvaged: dict = {}
+    if doc_type_m:
+        salvaged["document_type"] = doc_type_m.group(1)
+    if doc_num_m:
+        salvaged["document_number"] = doc_num_m.group(1)
+    if doc_date_m:
+        salvaged["document_date"] = doc_date_m.group(1)
+    if sender_m:
+        salvaged["sender"] = sender_m.group(1)
+    if recipient_m:
+        salvaged["recipient"] = recipient_m.group(1)
+    salvaged["items"] = items
+
+    return salvaged
+
+
+def _is_root_payload(data: dict) -> bool:
+    """Pastikan kamus adalah dokumen tingkat atas, bukan hanya satu baris barang."""
+    root_keys = {
+        "document_type",
+        "jenis_dokumen",
+        "document_number",
+        "nomor_dokumen",
+        "document_date",
+        "tanggal",
+        "sender",
+        "pengirim",
+        "recipient",
+        "penerima",
+        "items",
+        "barang",
+    }
+    return any(key in data for key in root_keys)
+
 
 def extract_json_object(text: str) -> dict | None:
-    """Ambil objek JSON pertama dari keluaran model.
+    """Ambil objek JSON pertama dari keluaran model, dengan toleransi sintaks.
 
-    Model kerap membungkus jawaban dengan pagar markdown atau menambah kalimat
-    penutup. Keduanya diperlakukan sebagai hal normal, bukan error.
+    Model kerap membungkus jawaban dengan pagar markdown, menambah kalimat
+    penutup, koma gantung, nilai tak terkutip, atau output terpotong.
+    Semua hal tersebut diperbaiki dan diselamatkan bila memungkinkan.
     """
     if not text:
         return None
@@ -185,15 +363,43 @@ def extract_json_object(text: str) -> dict | None:
 
     for candidate in candidates:
         block = _first_balanced_object(candidate)
-        if block is None:
-            continue
-        try:
-            parsed = json.loads(block)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
+        blocks_to_try: list[str] = []
+        if block is not None:
+            blocks_to_try.append(block)
+        else:
+            start = candidate.find("{")
+            if start >= 0:
+                blocks_to_try.append(candidate[start:])
+
+        for raw_block in blocks_to_try:
+            try:
+                parsed = json.loads(raw_block)
+                if isinstance(parsed, dict) and _is_root_payload(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            repaired = _repair_json_string(raw_block)
+            try:
+                parsed = json.loads(repaired)
+                if isinstance(parsed, dict) and _is_root_payload(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            closed = _close_truncated_json(repaired)
+            try:
+                parsed = json.loads(closed)
+                if isinstance(parsed, dict) and _is_root_payload(parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+            parsed_py = _try_parse_python_dict(raw_block)
+            if parsed_py is not None and _is_root_payload(parsed_py):
+                return parsed_py
+
+    return _salvage_partial_payload(text)
 
 
 def _first_balanced_object(text: str) -> str | None:
