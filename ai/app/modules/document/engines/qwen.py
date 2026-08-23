@@ -146,6 +146,7 @@ def _read_page(model, processor, image: Image.Image, page_number: int) -> Extrac
             **inputs,
             max_new_tokens=settings.qwen_max_new_tokens,
             do_sample=False,  # ekstraksi butuh determinisme, bukan variasi
+            repetition_penalty=settings.qwen_repetition_penalty,
             # generation_config bawaan Qwen menyetel temperature/top_p/top_k.
             # Ketiganya hanya berlaku saat sampling, jadi dengan do_sample=False
             # tidak ada warper yang dipasang dan nilainya tidak dipakai sama

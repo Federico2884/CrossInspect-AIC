@@ -213,3 +213,11 @@ def test_get_engine_selects_qwen_by_env(monkeypatch, value):
 
     assert get_engine().name == get_settings().qwen_model_id
     get_settings.cache_clear()
+
+
+def test_repetition_penalty_setting_configurable(monkeypatch):
+    monkeypatch.setenv("AI_QWEN_REPETITION_PENALTY", "1.15")
+    get_settings.cache_clear()
+
+    assert get_settings().qwen_repetition_penalty == 1.15
+    get_settings.cache_clear()

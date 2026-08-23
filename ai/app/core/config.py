@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     engine: str = "mock"
     qwen_model_id: str = "Qwen/Qwen2-VL-2B-Instruct"
     qwen_max_new_tokens: int = 768
+    # Penalti repetisi decoding untuk mencegah looping token (seperti '000000...')
+    # pada foto berdegradasi berat/rusak. 1.05 cukup lembut untuk tidak merusak
+    # repetisi wajar pada struktur baris JSON.
+    qwen_repetition_penalty: float = 1.05
     # Batas jumlah piksel yang dilihat model (knob resmi Qwen2-VL lewat
     # qwen-vl-utils). 1_003_520 px = ~1260 visual token untuk halaman A4.
     #
