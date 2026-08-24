@@ -142,7 +142,7 @@ class InspectWarning(BaseModel):
 class Meta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    engine: str = Field(description="'mock' atau id model, mis. 'yolov8n'.")
+    engine: str = Field(description="'mock' atau id model, mis. 'yolov12n'.")
     device: Literal["cpu"] = "cpu"
     processing_ms: int = Field(ge=0)
     model: str | None = Field(default=None, description="Nama berkas bobot yang dipakai.")
