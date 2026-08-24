@@ -24,4 +24,7 @@ qwen-vl-utils==0.0.8            # image resizing helpers for Qwen2-VL prompts
 # opencv-python-headless dibutuhkan agar ultralytics tidak mencoba memuat
 # library GUI/X11 (libxcb.so.1) yang absen di Debian slim image.
 opencv-python-headless>=4.8.0
-ultralytics==8.3.55
+# 8.3.78, bukan lebih rendah: bobot YOLOv12 memakai blok A2C2f yang belum ada
+# di 8.3.55. Gejalanya bukan pesan versi, melainkan
+# "AttributeError: Can't get attribute 'A2C2f'" saat memuat bobot.
+ultralytics==8.3.78

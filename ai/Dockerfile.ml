@@ -33,12 +33,20 @@ RUN apt-get update \
         libsm6 \
         libxext6 \
         libxrender1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && python -c "import ultralytics; print('ultralytics siap:', ultralytics.__version__)"
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
 # Bobot YOLO Modul 2 — di image inilah deteksi asli benar-benar berjalan.
 COPY models ./models
+
+# Muat bobotnya sungguhan, bukan sekadar import pustaka. Arsitektur baru menuntut
+# ultralytics yang cukup baru — YOLOv12 memakai blok A2C2f yang tidak ada di versi
+# lama — dan tanpa pemeriksaan ini kegagalannya baru muncul saat request pertama,
+# sebagai 500, dengan vision diam-diam jatuh ke mock.
+RUN python -c "\
+from ultralytics import YOLO; import ultralytics; \
+m = YOLO('models/inspection.pt'); \
+print('bobot termuat:', m.names, '| ultralytics', ultralytics.__version__)"
 
 RUN useradd --create-home --uid 1000 aiuser \
     && mkdir -p "$HF_HOME" \
