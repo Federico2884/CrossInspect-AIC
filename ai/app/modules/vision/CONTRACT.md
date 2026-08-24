@@ -185,8 +185,9 @@ curl -F "file=@stack.jpg" -F "scenario=partial_occlusion" http://localhost:8001/
 
 Disebutkan terbuka karena memengaruhi cara cross-check engine menafsirkan angkanya.
 
-**Hitungan adalah batas bawah, bukan angka pasti.** Bobot saat ini (YOLOv8n,
-10 epoch) mencatat recall 0.569 dan mAP@50 0.643 pada set validasi. Artinya
+**Hitungan adalah batas bawah, bukan angka pasti.** Bobot saat ini (YOLOv12n,
+30 epoch) mencatat precision 0.701, recall 0.563, mAP@50 0.640, dan mAP@50-95
+0.425 pada set validasi berisi 453 gambar dan 1.424 instance. Artinya
 sebagian kemasan memang terlewat, terutama pada tumpukan bertindihan. Karena itu
 `POSSIBLE_OCCLUSION` ada, dan karena itu `count_confidence.overall` diturunkan
 saat occlusion terdeteksi. Model akan dilatih ulang; angka-angka ini akan berubah,
