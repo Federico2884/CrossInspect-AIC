@@ -2,33 +2,24 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\InspectShipment;
-use App\Models\Inspection;
-use App\Services\CrossInspectClient;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Alur utama cross-check (terantre). Seluruh test memalsukan service AI,
- * jadi tidak ada container, model, maupun jaringan yang dibutuhkan untuk menjalankannya.
+ * Alur utama cross-check. Seluruh test memalsukan service AI, jadi tidak ada
+ * container, model, maupun jaringan yang dibutuhkan untuk menjalankannya.
  */
 class InspectionTest extends TestCase
 {
-    use RefreshDatabase;
-
     protected function setUp(): void
     {
         parent::setUp();
 
         // Test tidak boleh bergantung pada hasil `npm run build`.
         $this->withoutVite();
-        Storage::fake('local');
     }
 
     private function documentPayload(array $overrides = []): array
@@ -106,23 +97,11 @@ class InspectionTest extends TestCase
         ]);
     }
 
-    private function inspectionFor(array $attributes = []): Inspection
-    {
-        Storage::disk('local')->put('documents/sj.pdf', '%PDF-1.7');
-        Storage::disk('local')->put('photos/tumpukan.jpg', 'fake-image-bytes');
-
-        return Inspection::create(array_merge([
-            'document_original_name' => 'sj.pdf',
-            'document_stored_path' => 'documents/sj.pdf',
-            'photo_original_name' => 'tumpukan.jpg',
-            'photo_stored_path' => 'photos/tumpukan.jpg',
-            'status' => Inspection::STATUS_QUEUED,
-        ], $attributes));
-    }
-
     private function submit(array $overrides = [])
     {
         return $this->post('/inspections', array_merge([
+            // create() alih-alih image(): image() butuh ekstensi GD, dan test ini
+            // tidak sedang menguji isi gambar — hanya alurnya.
             'document' => UploadedFile::fake()->create('sj.pdf', 100, 'application/pdf'),
             'photo' => UploadedFile::fake()->create('tumpukan.jpg', 100, 'image/jpeg'),
         ], $overrides));
@@ -139,64 +118,20 @@ class InspectionTest extends TestCase
 
     public function test_the_front_page_carries_no_mock_controls(): void
     {
+        // Kendali skenario tinggal di /demo. Memisahkannya menjaga muka aplikasi
+        // menampilkan alur sungguhan saja — dan menghindarkan aturan "berkas
+        // wajib kecuali kalau..." yang membingungkan di formulir ini.
         $this->get('/')
             ->assertDontSee('mixed_units')
             ->assertDontSee('partial_occlusion')
             ->assertSee(route('demo.create'), false);
     }
 
-    public function test_upload_stores_both_files_and_queues_inspect_job(): void
-    {
-        Queue::fake();
-
-        $this->submit()->assertRedirect();
-
-        $inspection = Inspection::sole();
-        $this->assertSame('sj.pdf', $inspection->document_original_name);
-        $this->assertSame('tumpukan.jpg', $inspection->photo_original_name);
-        $this->assertTrue(Storage::disk('local')->exists($inspection->document_stored_path));
-        $this->assertTrue(Storage::disk('local')->exists($inspection->photo_stored_path));
-
-        Queue::assertPushed(InspectShipment::class, function (InspectShipment $job) use ($inspection) {
-            return $job->inspection->id === $inspection->id;
-        });
-    }
-
-    public function test_upload_redirects_to_the_waiting_page(): void
-    {
-        Queue::fake();
-
-        $response = $this->submit();
-        $inspection = Inspection::sole();
-
-        $response->assertRedirect(route('inspections.show', $inspection));
-    }
-
-    public function test_both_files_are_required(): void
-    {
-        $this->post('/inspections', [])->assertSessionHasErrors(['document', 'photo']);
-    }
-
-    public function test_a_pdf_is_not_accepted_as_the_goods_photo(): void
-    {
-        $this->submit(['photo' => UploadedFile::fake()->create('bukan-foto.pdf', 12, 'application/pdf')])
-            ->assertSessionHasErrors('photo');
-
-        Http::assertNothingSent();
-    }
-
-    public function test_job_records_a_successful_crosscheck_matching(): void
+    public function test_a_matching_shipment_is_reported_as_matching(): void
     {
         $this->fakeAllThree();
-        $inspection = $this->inspectionFor();
 
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
-
-        $inspection->refresh();
-        $this->assertTrue($inspection->isDone());
-        $this->assertSame('MATCH', $inspection->verdict_response['status']);
-
-        $this->get(route('inspections.show', $inspection))
+        $this->submit()
             ->assertOk()
             ->assertSee('Cocok')
             ->assertSee('Susu UHT Ultra 250ml');
@@ -204,10 +139,11 @@ class InspectionTest extends TestCase
 
     public function test_the_photo_is_inspected_before_the_document(): void
     {
+        // Vision menjawab dalam milidetik, dokumen bisa memakan menit. Kalau
+        // urutannya terbalik, foto yang ditolak baru ketahuan setelah pengguna
+        // menunggu inference yang sia-sia.
         $this->fakeAllThree();
-        $inspection = $this->inspectionFor();
-
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
+        $this->submit();
 
         $paths = collect(Http::recorded())
             ->map(fn (array $pair) => parse_url($pair[0]->url(), PHP_URL_PATH))
@@ -227,14 +163,7 @@ class InspectionTest extends TestCase
             '*/crosscheck' => Http::response($this->verdictPayload()),
         ]);
 
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
-
-        $inspection->refresh();
-        $this->assertTrue($inspection->hasFailed());
-        $this->assertSame('Gambar tidak bisa didekode.', $inspection->error['failure']);
-
-        $this->get(route('inspections.show', $inspection))
+        $this->submit()
             ->assertOk()
             ->assertSee('Gambar tidak bisa didekode.')
             ->assertSee('UNREADABLE_IMAGE');
@@ -244,11 +173,11 @@ class InspectionTest extends TestCase
 
     public function test_unverified_parameters_are_never_shown_as_safe(): void
     {
+        // Inti kejujuran sistem ini: petugas gudang tidak boleh membaca
+        // "belum diperiksa" sebagai jaminan bahwa kemasan aman.
         $this->fakeAllThree();
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
 
-        $response = $this->get(route('inspections.show', $inspection))->assertOk();
+        $response = $this->submit()->assertOk();
 
         $response->assertSee('Belum diperiksa');
         $response->assertSee('Identitas produk');
@@ -276,10 +205,7 @@ class InspectionTest extends TestCase
             ],
         ]);
 
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
-
-        $this->get(route('inspections.show', $inspection))
+        $this->submit()
             ->assertOk()
             ->assertSee('Cocok sebagian')
             ->assertSee('Gula Pasir')
@@ -296,26 +222,14 @@ class InspectionTest extends TestCase
             ],
         ]);
 
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
-
-        $this->get(route('inspections.show', $inspection))
-            ->assertOk()
-            ->assertSee('Ada selisih')
-            ->assertSee('-2');
+        $this->submit()->assertOk()->assertSee('Ada selisih')->assertSee('-2');
     }
 
     public function test_an_unreachable_service_explains_itself(): void
     {
         Http::fake(fn () => throw new ConnectionException('Connection refused'));
 
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
-
-        $inspection->refresh();
-        $this->assertTrue($inspection->hasFailed());
-
-        $this->get(route('inspections.show', $inspection))
+        $this->submit()
             ->assertOk()
             ->assertSee('Tidak bisa menghubungi service AI')
             ->assertSee('memeriksa foto barang');
@@ -332,41 +246,31 @@ class InspectionTest extends TestCase
             ),
         ]);
 
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
-
-        $inspection->refresh();
-        $this->assertTrue($inspection->hasFailed());
-
-        $this->get(route('inspections.show', $inspection))
-            ->assertOk()
-            ->assertSee('Body gagal validasi.');
+        $this->submit()->assertOk()->assertSee('Body gagal validasi.');
     }
 
-    public function test_waiting_page_shows_while_job_is_pending(): void
+    public function test_both_files_are_required(): void
     {
-        $inspection = $this->inspectionFor(['status' => Inspection::STATUS_PROCESSING_DOCUMENT]);
-
-        $this->get(route('inspections.show', $inspection))
-            ->assertOk()
-            ->assertSee('Membaca dokumen')
-            ->assertSee('id="pending"', false);
+        $this->post('/inspections', [])->assertSessionHasErrors(['document', 'photo']);
     }
 
-    public function test_status_endpoint_reports_each_state(): void
+    public function test_a_pdf_is_not_accepted_as_the_goods_photo(): void
     {
-        $inspection = $this->inspectionFor(['status' => Inspection::STATUS_PROCESSING_VISION]);
+        // Modul 2 menolak PDF; menangkapnya di sini menghemat satu perjalanan.
+        $this->submit(['photo' => UploadedFile::fake()->create('bukan-foto.pdf', 12, 'application/pdf')])
+            ->assertSessionHasErrors('photo');
 
-        $this->get(route('inspections.status', $inspection))
-            ->assertOk()
-            ->assertJson([
-                'status' => 'processing_vision',
-                'pending' => true,
-            ]);
+        Http::assertNothingSent();
     }
 
     public function test_an_empty_detection_map_survives_the_round_trip(): void
     {
+        // PHP tidak bisa membedakan map kosong dari list kosong: keduanya
+        // menjadi array(). Kalau respons Modul 2 di-decode lalu di-encode ulang,
+        // `class_counts: {}` berubah jadi `[]` dan Modul 3 menolaknya dengan 422.
+        //
+        // Itu bukan kasus pinggiran — persis itu yang terjadi setiap kali foto
+        // tidak memuat objek apa pun, yaitu saat vonisnya justru paling penting.
         $vision = $this->visionPayload(['detected_count' => 0, 'class_counts' => new \stdClass()]);
 
         Http::fake([
@@ -377,8 +281,7 @@ class InspectionTest extends TestCase
             '*/crosscheck' => Http::response($this->verdictPayload()),
         ]);
 
-        $inspection = $this->inspectionFor();
-        (new InspectShipment($inspection))->handle(app(CrossInspectClient::class));
+        $this->submit()->assertOk();
 
         Http::assertSent(fn (Request $request) => ! str_contains($request->url(), '/crosscheck')
             || str_contains($request->body(), '"class_counts":{}'));

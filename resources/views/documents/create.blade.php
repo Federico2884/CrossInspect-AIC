@@ -62,9 +62,6 @@
             <span id="pending-note" class="hidden text-sm text-neutral-600">
                 Mengunggah&hellip;
             </span>
-            <a href="{{ route('documents.index') }}" class="ml-auto text-sm text-neutral-600 underline hover:text-neutral-900">
-                Riwayat pembacaan
-            </a>
         </div>
     </form>
 

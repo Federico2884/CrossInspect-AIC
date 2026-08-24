@@ -2,27 +2,37 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\InspectShipment;
-use App\Models\Inspection;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
+use App\Services\CrossInspectClient;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
  * Alur utama CrossInspect: satu dokumen, satu foto, satu vonis.
  *
- * Unggahan disimpan ke storage server dan pekerjaan diantrekan (InspectShipment),
- * lalu browser diarahkan ke halaman tunggu yang melakukan polling status berkala.
+ * Halaman ini memanggil tiga endpoint service AI secara berurutan dalam satu
+ * request. Urutannya disengaja — vision lebih dulu karena ia menjawab dalam
+ * milidetik, jadi service yang mati atau berkas yang ditolak ketahuan sebelum
+ * pengguna menunggu inference dokumen yang bisa memakan menit.
+ *
+ * Halaman ini sengaja tidak punya kendali skenario mock. Alat uji itu tinggal
+ * di ScenarioDemoController, supaya muka aplikasi menampilkan alur sungguhan
+ * saja — dan supaya aturan "berkas wajib" di sini tidak perlu dilonggarkan demi
+ * kenyamanan mencoba.
+ *
+ * JSON dari service diteruskan apa adanya ke view. Memetakannya ke objek PHP
+ * hanya menciptakan tempat kedua yang bisa menyimpang dari kontrak di
+ * ai/app/modules/.
  */
 class InspectionController extends Controller
 {
+    public function __construct(private readonly CrossInspectClient $ai) {}
+
     public function create(): View
     {
         return view('inspections.create');
     }
 
-    public function inspect(Request $request): RedirectResponse
+    public function inspect(Request $request): View
     {
         $validated = $request->validate([
             // Batas 20 MB disamakan dengan service AI supaya penolakan terjadi
@@ -32,37 +42,41 @@ class InspectionController extends Controller
             'photo' => ['required', 'file', 'mimes:png,jpg,jpeg,webp', 'max:20480'],
         ]);
 
-        $documentPath = $validated['document']->store('documents', 'local');
-        $photoPath = $validated['photo']->store('photos', 'local');
+        $photo = $validated['photo'];
+        $vision = $this->ai->upload(
+            '/vision/inspect',
+            file_get_contents($photo->getRealPath()),
+            $photo->getClientOriginalName(),
+            null,
+            'memeriksa foto barang'
+        );
+        if (CrossInspectClient::failed($vision)) {
+            return view('inspections.result', $vision);
+        }
 
-        $inspection = Inspection::create([
-            'document_original_name' => $validated['document']->getClientOriginalName(),
-            'document_stored_path' => $documentPath,
-            'photo_original_name' => $validated['photo']->getClientOriginalName(),
-            'photo_stored_path' => $photoPath,
-            'status' => Inspection::STATUS_QUEUED,
-        ]);
+        $document = $validated['document'];
+        $parsed = $this->ai->upload(
+            '/document/parse',
+            file_get_contents($document->getRealPath()),
+            $document->getClientOriginalName(),
+            null,
+            'membaca dokumen'
+        );
+        if (CrossInspectClient::failed($parsed)) {
+            return view('inspections.result', $parsed);
+        }
 
-        InspectShipment::dispatch($inspection);
+        $verdict = $this->ai->reconcile($parsed['raw'], $vision['raw']);
+        if (CrossInspectClient::failed($verdict)) {
+            return view('inspections.result', $verdict);
+        }
 
-        return redirect()->route('inspections.show', $inspection);
-    }
-
-    public function show(Inspection $inspection): View
-    {
-        return view('inspections.show', ['inspection' => $inspection]);
-    }
-
-    /**
-     * Dipanggil berkala oleh JavaScript halaman tunggu.
-     */
-    public function status(Inspection $inspection): JsonResponse
-    {
-        return response()->json([
-            'status' => $inspection->status,
-            'pending' => $inspection->isPending(),
-            'elapsed' => $inspection->elapsedSeconds(),
-            'step' => $inspection->stepLabel(),
+        return view('inspections.result', [
+            'verdict' => $verdict,
+            'document' => $parsed['data'],
+            'vision' => $vision['data'],
+            'documentName' => $document->getClientOriginalName(),
+            'photoName' => $photo->getClientOriginalName(),
         ]);
     }
 }
