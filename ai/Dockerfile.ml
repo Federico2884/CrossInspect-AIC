@@ -18,6 +18,24 @@ COPY requirements.txt requirements-ml.txt ./
 RUN pip install --no-cache-dir -r requirements-ml.txt \
     && python -c "import torch; assert not torch.cuda.is_available(); assert '+cpu' in torch.__version__, torch.__version__"
 
+# Dependensi sistem untuk cv2, yang ditarik ultralytics. Tanpa ini:
+# ImportError libxcb.so.1 — dan karena vision jatuh ke mock secara diam-diam,
+# kegagalannya tidak terlihat sampai seseorang memeriksa /vision/engine.
+#
+# Sengaja ditaruh SESUDAH pip install, berbeda dari Dockerfile.dev: menaruhnya
+# di atas akan membatalkan cache layer torch, dan memasang ulang torch menuntut
+# memori yang tidak selalu tersedia.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -c "import ultralytics; print('ultralytics siap:', ultralytics.__version__)"
+
 COPY app ./app
 # Bobot YOLO Modul 2 — di image inilah deteksi asli benar-benar berjalan.
 COPY models ./models
