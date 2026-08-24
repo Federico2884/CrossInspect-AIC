@@ -18,9 +18,35 @@ COPY requirements.txt requirements-ml.txt ./
 RUN pip install --no-cache-dir -r requirements-ml.txt \
     && python -c "import torch; assert not torch.cuda.is_available(); assert '+cpu' in torch.__version__, torch.__version__"
 
+# Dependensi sistem untuk cv2, yang ditarik ultralytics. Tanpa ini:
+# ImportError libxcb.so.1 — dan karena vision jatuh ke mock secara diam-diam,
+# kegagalannya tidak terlihat sampai seseorang memeriksa /vision/engine.
+#
+# Sengaja ditaruh SESUDAH pip install, berbeda dari Dockerfile.dev: menaruhnya
+# di atas akan membatalkan cache layer torch, dan memasang ulang torch menuntut
+# memori yang tidak selalu tersedia.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY app ./app
 # Bobot YOLO Modul 2 — di image inilah deteksi asli benar-benar berjalan.
 COPY models ./models
+
+# Muat bobotnya sungguhan, bukan sekadar import pustaka. Arsitektur baru menuntut
+# ultralytics yang cukup baru — YOLOv12 memakai blok A2C2f yang tidak ada di versi
+# lama — dan tanpa pemeriksaan ini kegagalannya baru muncul saat request pertama,
+# sebagai 500, dengan vision diam-diam jatuh ke mock.
+RUN python -c "\
+from ultralytics import YOLO; import ultralytics; \
+m = YOLO('models/inspection.pt'); \
+print('bobot termuat:', m.names, '| ultralytics', ultralytics.__version__)"
 
 RUN useradd --create-home --uid 1000 aiuser \
     && mkdir -p "$HF_HOME" \

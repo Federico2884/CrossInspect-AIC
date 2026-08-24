@@ -128,7 +128,7 @@ Container tetap mencoba menghubungi `huggingface.co` setiap kali memuat model, d
 sana menambah jeda percuma padahal bobotnya sudah ada. Setelah unduhan pertama selesai,
 `HF_HUB_OFFLINE=1` menghilangkan perjalanan jaringan itu.
 
-**YOLO (Modul 2)** — 6 MB di `models/inspection.pt`, **ikut di-commit ke repo** dan disalin ke
+**YOLO (Modul 2)** — 5,2 MB di `models/inspection.pt`, **ikut di-commit ke repo** dan disalin ke
 dalam image. Cukup kecil untuk itu, dan efeknya repo jadi mandiri: tidak perlu API key Roboflow
 maupun langkah unduh terpisah. Jalur `models/` selebihnya tetap di-gitignore.
 
@@ -157,9 +157,19 @@ pada dua dokumen lain selisihnya di bawah satu detik. Sebabnya, yang memakan wak
 menuliskan JSON baris demi baris, bukan melihat gambarnya. Karena itu `qwen_max_pixels`
 dibiarkan tinggi — menurunkannya menukar akurasi dengan kecepatan yang sering tidak datang.
 
-Modul 2 belum diukur setara, tetapi ordenya berbeda jauh: YOLO nano pada satu foto 640 px
-selesai dalam hitungan milidetik, bukan menit. Latensi yang dirasakan pengguna sepenuhnya
-ditentukan Modul 1.
+Modul 2 ordenya berbeda jauh — hitungan milidetik, bukan menit. Diukur pada foto 1280×960 yang
+sama, CPU:
+
+```
+  YOLOv8n    192 ms
+  YOLOv12n   773 ms     ← bobot yang dipakai sekarang
+```
+
+v12 sekitar empat kali lebih lambat, tetapi keduanya masih jauh di bawah satu detik. Latensi
+yang dirasakan pengguna sepenuhnya ditentukan Modul 1.
+
+Perbandingan akurasi keduanya **belum** diukur; angka di atas hanya kecepatan. Kalau nanti
+ternyata setara, v8 lebih hemat.
 
 ## Batasan yang diketahui
 

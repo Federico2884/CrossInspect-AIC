@@ -25,7 +25,7 @@ ketahuan jauh belakangan.
 | Modul | Peran | Model |
 |---|---|---|
 | 1. Document Parsing | Ekstraksi barang & jumlah dari Surat Jalan / Invoice | Qwen2-VL-2B (CPU) |
-| 2. Physical Inspection | Menghitung kemasan pada foto | YOLO, fine-tuned |
+| 2. Physical Inspection | Menghitung kemasan pada foto | YOLOv12n, fine-tuned |
 | 3. Cross-Check | Merekonsiliasi keduanya | murni aturan, tanpa model |
 
 Modul 3 sengaja tidak memuat model. Ia menerima dua respons JSON dan menjawab dalam milidetik,
@@ -118,7 +118,7 @@ dengan Docker dijatah di bawah 4 GB, proses build bisa dimatikan paksa di tengah
 Qwen2-VL di CPU juga memakan waktu sekitar 200 detik per halaman; angka terukurnya ada di
 [`ai/README.md`](ai/README.md).
 
-Modul 2 tidak menuntut sebanyak itu. Bobot YOLO hanya 6 MB dan sudah ikut di repo, jadi kalau
+Modul 2 tidak menuntut sebanyak itu. Bobot YOLO hanya 5,2 MB dan sudah ikut di repo, jadi kalau
 yang ingin dicoba hanya perhitungan fisik, `AI_ENGINE` boleh dibiarkan `mock`:
 
 ```bash
@@ -134,7 +134,7 @@ Dokumen konsep berisi tiga parameter verifikasi:
 | Parameter | Status |
 |---|---|
 | **Kuantitas** | (Sudah) berjalan tetapi membandingkan **total**. Akurasi MAP juga masih seadanya (bisa ditingkatkan) |
-| **Identitas produk** | (Belum) model vision masih satu kelas (`packages`), sehingga varian tidak bisa dibedakan |
+| **Identitas produk** | (Belum) model vision masih satu kelas (`cardboard`), sehingga varian tidak bisa dibedakan |
 | **Integritas fisik** | (Belum) belum ada model deteksi kerusakan, sehingga `defect.status` selalu `unavailable`. Menjadi fitur tambahan yang belum diimplementasikan saat ini |
 
 Sistem menyatakan keterbatasan ini secara eksplisit di responsnya, bukan mendiamkannya. Baris
